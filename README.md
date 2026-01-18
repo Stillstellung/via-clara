@@ -6,6 +6,8 @@ A modern web-based dashboard for controlling LIFX smart lights with LLM-driven n
 ![Flask](https://img.shields.io/badge/flask-3.0.0-lightgrey.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
+![Dashboard](/dash.png)
+
 ## Features
 
 ### Light Control
@@ -14,6 +16,14 @@ A modern web-based dashboard for controlling LIFX smart lights with LLM-driven n
 - **Scene Activation** - One-click scene switching with visual feedback
 - **Real-time Status** - Auto-refresh every 10 seconds
 - **Multi-Zone Support** - Create gradients by describing them on LIFX Beam and Strip devices
+
+Request example
+
+![Request](/nlp1.png)
+
+And the result
+
+![Result](/nlp2.png)
 
 ### Configuration UI
 - **Model selection** - Choose between Claude Haiku, Sonnet, or Opus
