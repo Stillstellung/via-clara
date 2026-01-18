@@ -1,0 +1,5 @@
+{
+  "lifx_token": "YOUR_LIFX_API_TOKEN_HERE",
+  "claude_api_key": "YOUR_CLAUDE_API_KEY_HERE",
+  "claude_model": "claude-haiku-4-5-20251001"
+}

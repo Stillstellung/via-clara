@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Via Clara</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Via Clara</h1>
+            <div class="loading-indicator" id="loading">
+                <div class="spinner"></div>
+                <span>Refreshing...</span>
+            </div>
+            <button id="settings-button" class="settings-button" title="Settings">
+                <span class="material-icons">settings</span>
+            </button>
+        </header>
+        
+        <section class="natural-language-section">
+            <div class="input-container">
+                <input type="text" id="natural-language-input" placeholder="Ask me to control your lights... (e.g., 'turn on bedroom lights', 'set living room to blue')" />
+                <button id="natural-language-submit" class="submit-btn">
+                    <span class="material-icons">send</span>
+                </button>
+                <button id="pipeline-toggle" class="pipeline-toggle-btn" title="Enable pipeline tracking">
+                    <span class="material-icons">visibility_off</span>
+                </button>
+            </div>
+            <div id="natural-language-response" class="response-container"></div>
+            
+            <!-- Processing Pipeline Visualization -->
+            <div id="processing-pipeline" class="pipeline-container">
+                <div class="pipeline-stage" id="stage-ingestion">
+                    <div class="stage-icon">
+                        <span class="material-icons">text_snippet</span>
+                    </div>
+                    <div class="stage-content">
+                        <div class="stage-title">Prompt Ingestion</div>
+                        <div class="stage-details" id="ingestion-details">Analyzing your request...</div>
+                    </div>
+                    <div class="stage-status" id="ingestion-status">
+                        <span class="material-icons">radio_button_unchecked</span>
+                    </div>
+                </div>
+                
+                <div class="pipeline-connector"></div>
+                
+                <div class="pipeline-stage" id="stage-ai">
+                    <div class="stage-icon">
+                        <span class="material-icons">psychology</span>
+                    </div>
+                    <div class="stage-content">
+                        <div class="stage-title">AI Processing</div>
+                        <div class="stage-details" id="ai-details">Converting to API commands...</div>
+                    </div>
+                    <div class="stage-status" id="ai-status">
+                        <span class="material-icons">radio_button_unchecked</span>
+                    </div>
+                </div>
+                
+                <div class="pipeline-connector"></div>
+                
+                <div class="pipeline-stage" id="stage-api">
+                    <div class="stage-icon">
+                        <span class="material-icons">api</span>
+                    </div>
+                    <div class="stage-content">
+                        <div class="stage-title">API Execution</div>
+                        <div class="stage-details" id="api-details">Sending commands to lights...</div>
+                    </div>
+                    <div class="stage-status" id="api-status">
+                        <span class="material-icons">radio_button_unchecked</span>
+                    </div>
+                </div>
+                
+                <div class="pipeline-connector"></div>
+                
+                <div class="pipeline-stage" id="stage-result">
+                    <div class="stage-icon">
+                        <span class="material-icons">check_circle</span>
+                    </div>
+                    <div class="stage-content">
+                        <div class="stage-title">Complete</div>
+                        <div class="stage-details" id="result-details">Ready for next command</div>
+                    </div>
+                    <div class="stage-status" id="result-status">
+                        <span class="material-icons">radio_button_unchecked</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- API Request/Response Details -->
+            <div id="api-details-panel" class="api-details-panel">
+                <div class="api-section">
+                    <h4>AI Analysis</h4>
+                    <div id="ai-analysis" class="code-block"></div>
+                </div>
+                <div class="api-section">
+                    <h4>API Requests</h4>
+                    <div id="api-requests" class="code-block"></div>
+                </div>
+                <div class="api-section">
+                    <h4>API Responses</h4>
+                    <div id="api-responses" class="code-block"></div>
+                </div>
+            </div>
+            
+            <div id="action-log" class="action-log">
+                <h3>Recent Actions</h3>
+                <div id="action-log-entries"></div>
+            </div>
+        </section>
+
+        <section class="pinned-section" id="pinned-section" style="display: none;">
+            <h2><span class="material-icons">push_pin</span> Pinned</h2>
+            <div id="pinned-container" class="pinned-grid"></div>
+        </section>
+
+        <section class="scenes-section">
+            <h2>Scenes</h2>
+            <div id="scenes-container" class="scenes-grid"></div>
+        </section>
+        
+        <section class="rooms-section">
+            <h2>Rooms</h2>
+            <div id="rooms-container" class="rooms-grid"></div>
+        </section>
+        
+        <section class="lights-section">
+            <h2>Lights</h2>
+            <div id="lights-container" class="lights-grid"></div>
+        </section>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="settings-modal">
+        <div class="settings-panel">
+            <div class="settings-header">
+                <h2>
+                    <span class="material-icons">settings</span>
+                    Settings
+                </h2>
+                <button id="settings-close" class="icon-button">
+                    <span class="material-icons">close</span>
+                </button>
+            </div>
+
+            <div class="settings-content">
+                <!-- Configuration Status -->
+                <div id="config-status" class="config-status">
+                    <span class="material-icons">info</span>
+                    <span id="config-status-text">Checking configuration...</span>
+                </div>
+
+                <!-- LIFX Token -->
+                <div class="setting-section">
+                    <label for="lifx-token-input">
+                        <span class="material-icons">lightbulb</span>
+                        LIFX API Token
+                    </label>
+                    <div class="input-group">
+                        <input
+                            type="password"
+                            id="lifx-token-input"
+                            placeholder="Enter your LIFX API token..."
+                            autocomplete="off"
+                        />
+                        <button id="lifx-token-toggle" class="toggle-visibility-btn" title="Show/Hide">
+                            <span class="material-icons">visibility</span>
+                        </button>
+                    </div>
+                    <small class="help-text">
+                        Get your token from
+                        <a href="https://cloud.lifx.com/settings" target="_blank">cloud.lifx.com/settings</a>
+                    </small>
+                </div>
+
+                <!-- Claude API Key -->
+                <div class="setting-section">
+                    <label for="claude-key-input">
+                        <span class="material-icons">psychology</span>
+                        Claude API Key
+                    </label>
+                    <div class="input-group">
+                        <input
+                            type="password"
+                            id="claude-key-input"
+                            placeholder="Enter your Claude API key..."
+                            autocomplete="off"
+                        />
+                        <button id="claude-key-toggle" class="toggle-visibility-btn" title="Show/Hide">
+                            <span class="material-icons">visibility</span>
+                        </button>
+                    </div>
+                    <small class="help-text">
+                        Get your key from
+                        <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a>
+                    </small>
+                </div>
+
+                <!-- Claude Model Selection -->
+                <div class="setting-section">
+                    <label for="claude-model-select">
+                        <span class="material-icons">model_training</span>
+                        Claude Model
+                    </label>
+                    <select id="claude-model-select" class="model-select">
+                        <option value="">Loading models...</option>
+                    </select>
+                    <small class="help-text">
+                        Haiku is fastest/cheapest, Sonnet is balanced, Opus is most capable
+                    </small>
+                </div>
+
+                <!-- System Prompt -->
+                <div class="setting-section">
+                    <label for="system-prompt-textarea">
+                        <span class="material-icons">edit_note</span>
+                        System Prompt
+                    </label>
+                    <textarea id="system-prompt-textarea" class="system-prompt-textarea" rows="12" placeholder="Custom system prompt for Claude AI..."></textarea>
+                    <small class="help-text">
+                        Customize Claude AI behavior for light control. Leave empty to use the default prompt.
+                        <button type="button" id="restore-default-prompt" class="link-button">Restore Default</button>
+                    </small>
+                </div>
+            </div>
+
+            <div class="settings-footer">
+                <div id="settings-message" class="settings-message"></div>
+                <div class="settings-actions">
+                    <button id="settings-cancel" class="secondary-button">
+                        Cancel
+                    </button>
+                    <button id="settings-save" class="primary-button">
+                        <span class="material-icons">save</span>
+                        Save Settings
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
