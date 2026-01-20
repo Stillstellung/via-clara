@@ -4,6 +4,8 @@ A modern web-based dashboard for controlling LIFX smart lights with LLM-driven n
 
 If you want to use the written commands to lighting feature(s), currently you must have an anthropic claude api key. Local LLMs behaved oddly, but I'll probably bring that option back one of these days. 
 
+Star it if ya like it. 
+
 ![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
 ![Flask](https://img.shields.io/badge/flask-3.0.0-lightgrey.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
