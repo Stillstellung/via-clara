@@ -11,6 +11,10 @@ let pinnedItems = new Map(); // key: id, value: {type, data}
 const PINNED_STORAGE_KEY = 'via-clara-pinned';
 let lastRightClick = { time: 0, target: null };
 
+// Theme management
+const THEME_STORAGE_KEY = 'via-clara-theme';
+let currentTheme = 'dark'; // default theme
+
 async function fetchData() {
     console.log('fetchData() called');
     showLoading();
@@ -130,6 +134,40 @@ function handleRightClick(e, id, type, data) {
     }
 }
 
+// ===========================
+// THEME MANAGEMENT
+// ===========================
+
+function initializeTheme() {
+    // Load theme from localStorage or default to dark
+    const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+    currentTheme = savedTheme || 'dark';
+    applyTheme(currentTheme);
+}
+
+function applyTheme(theme) {
+    document.body.setAttribute('data-theme', theme);
+    currentTheme = theme;
+
+    // Update toggle button icon
+    const toggleBtn = document.getElementById('theme-toggle');
+    const icon = toggleBtn.querySelector('.material-icons');
+
+    if (theme === 'light') {
+        icon.textContent = 'light_mode';
+        toggleBtn.title = 'Switch to dark mode';
+    } else {
+        icon.textContent = 'dark_mode';
+        toggleBtn.title = 'Switch to light mode';
+    }
+}
+
+function toggleTheme() {
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    applyTheme(newTheme);
+    localStorage.setItem(THEME_STORAGE_KEY, newTheme);
+}
+
 function renderPinnedSection() {
     const section = document.getElementById('pinned-section');
     const container = document.getElementById('pinned-container');
@@ -175,6 +213,9 @@ function renderPinnedSection() {
                 <span class="pin-indicator material-icons">push_pin</span>
                 <h3>${scene.name} ${badgeHtml}</h3>
             `;
+            card.setAttribute('tabindex', '0');
+            card.setAttribute('role', 'button');
+            card.setAttribute('aria-label', `Pinned - Activate scene: ${scene.name}`);
             card.onclick = () => activateScene(id, card);
             card.oncontextmenu = (e) => handleRightClick(e, id, 'scene', scene);
 
@@ -197,6 +238,9 @@ function renderPinnedSection() {
                 <h3>${room.name}</h3>
                 <p class="light-count">${room.lights.length} lights</p>
             `;
+            card.setAttribute('tabindex', '0');
+            card.setAttribute('role', 'button');
+            card.setAttribute('aria-label', `Pinned - Toggle ${room.name} room - ${lightsOn} of ${room.lights.length} lights on`);
             card.onclick = () => toggleRoom(id);
             card.oncontextmenu = (e) => handleRightClick(e, id, 'room', room);
 
@@ -222,6 +266,9 @@ function renderPinnedSection() {
                     <p>Color: ${light.color.saturation > 0 ? 'Colored' : 'White'}</p>
                 </div>
             `;
+            card.setAttribute('tabindex', '0');
+            card.setAttribute('role', 'button');
+            card.setAttribute('aria-label', `Pinned - Toggle ${light.label} light - currently ${light.power}`);
             card.onclick = () => toggleLight(light.id, card);
             card.oncontextmenu = (e) => handleRightClick(e, id, 'light', light);
         }
@@ -272,6 +319,9 @@ function renderScenes() {
             ${pinIndicator}
             <h3>${scene.name} ${badgeHtml}</h3>
         `;
+        card.setAttribute('tabindex', '0');
+        card.setAttribute('role', 'button');
+        card.setAttribute('aria-label', `Activate scene: ${scene.name}`);
         card.onclick = () => activateScene(scene.uuid, card);
         card.oncontextmenu = (e) => handleRightClick(e, scene.uuid, 'scene', scene);
         container.appendChild(card);
@@ -298,6 +348,9 @@ function renderRooms() {
             <h3>${room.name}</h3>
             <p class="light-count">${room.lights.length} lights</p>
         `;
+        card.setAttribute('tabindex', '0');
+        card.setAttribute('role', 'button');
+        card.setAttribute('aria-label', `Toggle ${room.name} room - ${lightsOn} of ${room.lights.length} lights on`);
         card.onclick = () => toggleRoom(room.id);
         card.oncontextmenu = (e) => handleRightClick(e, room.id, 'room', room);
         container.appendChild(card);
@@ -328,6 +381,9 @@ function renderLights() {
                 ${light.group ? `<p>Room: ${light.group.name}</p>` : ''}
             </div>
         `;
+        card.setAttribute('tabindex', '0');
+        card.setAttribute('role', 'button');
+        card.setAttribute('aria-label', `Toggle ${light.label} light - currently ${light.power}`);
         card.onclick = () => toggleLight(light.id, card);
         card.oncontextmenu = (e) => handleRightClick(e, light.id, 'light', light);
         container.appendChild(card);
@@ -960,7 +1016,37 @@ async function restoreDefaultPrompt() {
     }
 }
 
+// ===========================
+// KEYBOARD NAVIGATION & ACCESSIBILITY
+// ===========================
+
+function addKeyboardNavigation() {
+    // Make cards keyboard accessible
+    document.addEventListener('click', (e) => {
+        const card = e.target.closest('.scene-card, .room-card, .light-card');
+        if (card) {
+            if (!card.hasAttribute('tabindex')) {
+                card.setAttribute('tabindex', '0');
+            }
+        }
+    });
+
+    // Handle Enter/Space key on cards
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            const card = e.target.closest('.scene-card, .room-card, .light-card');
+            if (card && document.activeElement === card) {
+                e.preventDefault();
+                card.click();
+            }
+        }
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    // Initialize theme before anything else
+    initializeTheme();
+
     // Load pinned items from localStorage before fetching data
     loadPinnedItems();
 
@@ -969,9 +1055,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const input = document.getElementById('natural-language-input');
     const submitBtn = document.getElementById('natural-language-submit');
     const toggleBtn = document.getElementById('pipeline-toggle');
+    const themeToggleBtn = document.getElementById('theme-toggle');
 
     submitBtn.addEventListener('click', submitNaturalLanguageRequest);
     toggleBtn.addEventListener('click', togglePipelineTracking);
+    themeToggleBtn.addEventListener('click', toggleTheme);
 
     input.addEventListener('keypress', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -1013,6 +1101,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
+
+    // Add keyboard navigation for cards
+    addKeyboardNavigation();
 });
 
 setInterval(fetchData, 10000); // 10 second refresh
