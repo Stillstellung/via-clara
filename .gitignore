@@ -57,3 +57,4 @@ config.json
 
 # AI context files (local development only)
 CLAUDE.md
+.worktrees

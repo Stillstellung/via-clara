@@ -1061,6 +1061,15 @@ document.addEventListener('DOMContentLoaded', () => {
     toggleBtn.addEventListener('click', togglePipelineTracking);
     themeToggleBtn.addEventListener('click', toggleTheme);
 
+    // Prevent Chrome password autofill persistence
+    let hasInteracted = false;
+    input.addEventListener('focus', () => {
+        if (!hasInteracted) {
+            input.removeAttribute('readonly');
+            hasInteracted = true;
+        }
+    });
+
     input.addEventListener('keypress', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
