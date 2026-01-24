@@ -260,6 +260,87 @@ def get_scene_status(scene_uuid):
     except Exception as e:
         return jsonify({"error": str(e), "active": False}), HTTP_SERVER_ERROR
 
+@app.route('/api/scene/<scene_uuid>/debug')
+@limiter.limit(FLASK_LIGHTS_RATE_LIMIT)
+def debug_scene_status(scene_uuid):
+    """Debug endpoint to see exactly why a scene matches or doesn't match"""
+    try:
+        lights_response = make_lifx_request('GET', f"{BASE_URL}/lights/all", headers=get_lifx_headers())
+        if isinstance(lights_response, tuple):
+            return lights_response
+
+        scenes_response = make_lifx_request('GET', f"{BASE_URL}/scenes", headers=get_lifx_headers())
+        if isinstance(scenes_response, tuple):
+            return scenes_response
+
+        lights_data = lights_response.json()
+        scenes_data = scenes_response.json()
+
+        target_scene = next(
+            (scene for scene in scenes_data if scene['uuid'] == scene_uuid),
+            None
+        )
+
+        if not target_scene:
+            return error_response("Scene not found", HTTP_NOT_FOUND)
+
+        # Detailed debug info for each state in the scene
+        debug_states = []
+        for scene_state in target_scene.get('states', []):
+            selector = scene_state.get('selector')
+            matching_lights = SceneMatcher.find_matching_lights(lights_data, selector)
+
+            state_debug = {
+                "selector": selector,
+                "expected": {
+                    "power": scene_state.get('power'),
+                    "brightness": scene_state.get('brightness'),
+                    "color": scene_state.get('color')
+                },
+                "matching_lights": []
+            }
+
+            for light in matching_lights:
+                light_debug = {
+                    "name": light.get('label'),
+                    "id": light.get('id'),
+                    "actual": {
+                        "power": light.get('power'),
+                        "brightness": light.get('brightness'),
+                        "color": light.get('color')
+                    },
+                    "matches": {
+                        "power": SceneMatcher.check_power_match(light, scene_state),
+                        "brightness": SceneMatcher.check_brightness_match(light, scene_state),
+                        "color": SceneMatcher.check_color_match(light, scene_state),
+                        "overall": SceneMatcher.light_matches_state(light, scene_state)
+                    }
+                }
+                state_debug["matching_lights"].append(light_debug)
+
+            # Did any light match this state?
+            state_debug["state_matched"] = any(
+                l["matches"]["overall"] for l in state_debug["matching_lights"]
+            )
+            debug_states.append(state_debug)
+
+        matched_count = sum(1 for s in debug_states if s["state_matched"])
+        total_states = len(debug_states)
+
+        return jsonify({
+            "scene_name": target_scene.get('name'),
+            "scene_uuid": scene_uuid,
+            "matched_states": matched_count,
+            "total_states": total_states,
+            "match_percentage": round((matched_count / total_states) * 100, 1) if total_states > 0 else 0,
+            "threshold": SCENE_MATCH_THRESHOLD * 100,
+            "is_active": (matched_count / total_states) >= SCENE_MATCH_THRESHOLD if total_states > 0 else False,
+            "states": debug_states
+        })
+
+    except Exception as e:
+        return error_response(str(e), HTTP_SERVER_ERROR)
+
 @app.route('/api/group/<group_id>/toggle', methods=['PUT'])
 @limiter.limit(FLASK_TOGGLE_RATE_LIMIT)
 def toggle_group(group_id):

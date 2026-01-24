@@ -4,7 +4,10 @@ let rooms = new Map();
 let actionHistory = [];
 let pipelineTrackingEnabled = false;
 let sceneStatuses = new Map();
-let activatingScenes = new Set(); // Track scenes currently being activated
+let activatingScene = null; // Track scene currently being activated (API in flight)
+let activatingStartTime = null; // When activation started (for timeout fallback)
+let locallyActiveScene = null; // Track scene we activated locally (hybrid approach)
+const ACTIVATING_TIMEOUT_MS = 15000; // Max time to show "activating" before assuming done
 
 // Pinned items support
 let pinnedItems = new Map(); // key: id, value: {type, data}
@@ -33,22 +36,30 @@ async function fetchData() {
         // Update scene statuses from batch response
         const batchStatuses = await sceneStatusRes.json();
         sceneStatuses.clear();
-        
-        // Check if any scene is active
-        let hasActiveScene = false;
+
+        // Check if backend detected any scenes as active (70% threshold)
+        let activeScenes = new Set();
         for (const [sceneUuid, status] of Object.entries(batchStatuses)) {
             sceneStatuses.set(sceneUuid, status);
             if (status.active) {
-                hasActiveScene = true;
+                activeScenes.add(sceneUuid);
             }
         }
-        
-        // If any scene is active, clear all activating states
-        // (only one scene can be active at a time)
-        if (hasActiveScene && activatingScenes.size > 0) {
-            console.log('Active scene detected, clearing all activating states');
-            activatingScenes.clear();
+
+        // Handle transition from "activating" to "active"
+        if (activatingScene && activeScenes.has(activatingScene)) {
+            // The scene we activated is now detected as active - transition complete
+            console.log(`Scene ${activatingScene} transition complete`);
+            locallyActiveScene = activatingScene;
+            activatingScene = null;
+        } else if (!activatingScene && activeScenes.size > 0) {
+            // No scene activating, but backend detected one (external activation)
+            // Pick the first one (arbitrary but consistent)
+            const firstActive = activeScenes.values().next().value;
+            console.log(`External scene ${firstActive} detected`);
+            locallyActiveScene = firstActive;
         }
+        // If activatingScene is set but not yet detected as active, keep waiting
         
         console.log('Re-rendering UI...');
         processRooms();
@@ -194,18 +205,20 @@ function renderPinnedSection() {
             }
 
             const status = sceneStatuses.get(id) || { active: false };
-            const isActivating = activatingScenes.has(id);
+            const isActivating = (activatingScene === id);
+            // Hybrid: scene is active if locally tracked OR backend detected
+            const isActive = (locallyActiveScene === id) || status.active;
 
             card = document.createElement('div');
             let cardClasses = 'scene-card pinned';
-            if (isActivating) cardClasses += ' active';
-            else if (status.active) cardClasses += ' scene-active';
+            if (isActivating) cardClasses += ' scene-activating';
+            else if (isActive) cardClasses += ' scene-active';
             card.className = cardClasses;
 
             let badgeHtml = '';
             if (isActivating) {
                 badgeHtml = '<span class="scene-badge activating">(activating)</span>';
-            } else if (status.active) {
+            } else if (isActive) {
                 badgeHtml = '<span class="scene-badge">(active)</span>';
             }
 
@@ -290,7 +303,9 @@ function renderScenes() {
 
     scenes.forEach(scene => {
         const status = sceneStatuses.get(scene.uuid) || { active: false };
-        const isActivating = activatingScenes.has(scene.uuid);
+        const isActivating = (activatingScene === scene.uuid);
+        // Hybrid: scene is active if locally tracked OR backend detected (70% threshold)
+        const isActive = (locallyActiveScene === scene.uuid) || status.active;
         const isPinned = pinnedItems.has(scene.uuid);
 
         const card = document.createElement('div');
@@ -298,8 +313,8 @@ function renderScenes() {
 
         if (isPinned) cardClasses += ' pinned';
         if (isActivating) {
-            cardClasses += ' active'; // Purple "activating" state
-        } else if (status.active) {
+            cardClasses += ' scene-activating'; // Purple "activating" state
+        } else if (isActive) {
             cardClasses += ' scene-active'; // Green "active" state
         }
 
@@ -308,9 +323,8 @@ function renderScenes() {
         let badgeHtml = '';
         if (isActivating) {
             badgeHtml = `<span class="scene-badge activating">(activating)</span>`;
-        } else if (status.active) {
+        } else if (isActive) {
             badgeHtml = `<span class="scene-badge">(active)</span>`;
-            console.log(`RENDERING ACTIVE SCENE: ${scene.name} with badge`);
         }
 
         const pinIndicator = isPinned ? '<span class="pin-indicator material-icons">push_pin</span>' : '';
@@ -432,28 +446,30 @@ async function toggleRoom(roomId) {
 async function activateScene(sceneUuid, element) {
     showLoading();
     try {
-        // Clear any other activating scenes and mark this one as activating
-        activatingScenes.clear();
-        activatingScenes.add(sceneUuid);
-        
-        // Re-render to show activating state immediately
+        // Show "activating" state immediately (purple)
+        // This persists until backend detects scene as active (lights finish transitioning)
+        activatingScene = sceneUuid;
+        locallyActiveScene = null;
+        renderPinnedSection();
         renderScenes();
-        
+
         const response = await fetch(`/api/scene/${sceneUuid}`, {
             method: 'PUT'
         });
-        
+
         if (response.ok) {
-            console.log(`Scene ${sceneUuid} activation started`);
-            // The activating state will be cleared when scene is detected as active
+            console.log(`Scene ${sceneUuid} activation started, waiting for transition...`);
+            // Keep activatingScene set - backend will clear it when scene is detected as active
         } else {
-            // Remove from activating if activation failed
-            activatingScenes.delete(sceneUuid);
+            console.error(`Scene ${sceneUuid} activation failed`);
+            activatingScene = null;
+            renderPinnedSection();
             renderScenes();
         }
     } catch (error) {
         console.error('Error activating scene:', error);
-        activatingScenes.delete(sceneUuid);
+        activatingScene = null;
+        renderPinnedSection();
         renderScenes();
     } finally {
         hideLoading();
@@ -853,6 +869,10 @@ function closeSettings() {
     const modal = document.getElementById('settings-modal');
     modal.classList.remove('show');
     clearSettingsMessage();
+
+    // Clear password fields to prevent Chrome from prompting to save
+    document.getElementById('lifx-token-input').value = '';
+    document.getElementById('claude-key-input').value = '';
 }
 
 async function loadSettings() {
@@ -874,17 +894,19 @@ async function loadSettings() {
             statusText.textContent = 'Configuration required - please enter your API credentials';
         }
 
-        // Populate fields with masked values (placeholders only - don't show actual keys)
-        document.getElementById('lifx-token-input').placeholder =
-            settings.lifx_token || 'Enter your LIFX API token...';
-        document.getElementById('claude-key-input').placeholder =
-            settings.claude_api_key || 'Enter your Claude API key...';
+        // Populate fields with masked values
+        // These are masked server-side (e.g., "c5002ca2...6494") - not the actual keys
+        const lifxInput = document.getElementById('lifx-token-input');
+        const claudeInput = document.getElementById('claude-key-input');
 
-        // Don't populate actual values for security
-        document.getElementById('lifx-token-input').value = '';
-        document.getElementById('claude-key-input').value = '';
+        lifxInput.value = settings.lifx_token || '';
+        claudeInput.value = settings.claude_api_key || '';
 
-        // Update password toggle button states (disabled when input is empty)
+        // Mark inputs as having masked values (will be cleared on focus)
+        lifxInput.dataset.masked = settings.lifx_token ? 'true' : 'false';
+        claudeInput.dataset.masked = settings.claude_api_key ? 'true' : 'false';
+
+        // Update password toggle button states
         updatePasswordToggleStates();
 
         // Populate system prompt textarea
@@ -1126,6 +1148,22 @@ document.addEventListener('DOMContentLoaded', () => {
         togglePasswordVisibility('claude-key-input', 'claude-key-toggle');
     });
 
+    // Clear masked values when user focuses to enter new key
+    document.getElementById('lifx-token-input').addEventListener('focus', function() {
+        if (this.dataset.masked === 'true') {
+            this.value = '';
+            this.dataset.masked = 'false';
+            updatePasswordToggleStates();
+        }
+    });
+    document.getElementById('claude-key-input').addEventListener('focus', function() {
+        if (this.dataset.masked === 'true') {
+            this.value = '';
+            this.dataset.masked = 'false';
+            updatePasswordToggleStates();
+        }
+    });
+
     // Update toggle states when users type in password fields
     document.getElementById('lifx-token-input').addEventListener('input', updatePasswordToggleStates);
     document.getElementById('claude-key-input').addEventListener('input', updatePasswordToggleStates);
@@ -1154,4 +1192,4 @@ document.addEventListener('DOMContentLoaded', () => {
     addKeyboardNavigation();
 });
 
-setInterval(fetchData, 10000); // 10 second refresh
+setInterval(fetchData, 5000); // 5 second refresh (36 calls/min, well under 120/min LIFX limit)

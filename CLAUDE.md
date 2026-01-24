@@ -94,6 +94,7 @@ Access at http://localhost:5000
 - `GET /api/scenes` - Get all scenes
 - `GET /api/scenes/status/batch` - Get all scene statuses in one call (optimized)
 - `GET /api/scene/<scene_uuid>/status` - Get individual scene status
+- `GET /api/scene/<scene_uuid>/debug` - Debug scene matching (shows expected vs actual values)
 - `PUT /api/toggle/<selector>` - Toggle light
 - `PUT /api/scene/<scene_uuid>` - Activate scene (uses natural timing, no duration override)
 - `PUT /api/group/<group_id>/toggle` - Toggle room
@@ -275,15 +276,32 @@ The theme toggle button is located in the header (top-right area) with intuitive
 - Reduces API load while maintaining accurate scene detection
 
 ### Automatic Refresh
-- **Every 10 seconds** - Full data refresh from LIFX API (3x faster than before)
-- Enabled by API optimization - safe at 18 calls/minute vs 120/minute limit
+- **Every 5 seconds** - Full data refresh from LIFX API
+- Safe at 36 calls/minute vs 120/minute LIFX rate limit
 
-### Smart Scene Activation UX
-- **Click scene** → Immediate purple border + pulsing "(ACTIVATING)" badge
-- **Scene transitions** → Purple state persists during natural transition time
-- **Auto-detection** → Converts to green border + "(ACTIVE)" badge when detected
-- **External activation handling** → Clears all "activating" states when any scene becomes active (LIFX app, NLP, etc.)
-- **No arbitrary timeouts** → Visual feedback tied to actual scene completion
+### Scene Detection (Hybrid Approach)
+
+**Why hybrid?** The LIFX API has no "is this scene active?" endpoint. We must compare current light states against saved scene states. Additionally, scenes can have transition times (e.g., 10 seconds) during which lights gradually change to target values.
+
+**How it works:**
+
+1. **Click scene** → Purple "activating" badge appears immediately
+2. **During transition** → Activating state persists while lights transition (can be 10+ seconds depending on scene settings)
+3. **Backend polling** → Every 5 seconds, server compares light states to scene states
+4. **Transition complete** → When backend detects scene at 70% match, flips to green "active" badge
+5. **External activations** → If you activate via LIFX app/Alexa, backend detects it and syncs UI
+
+**Backend matching (70% threshold)** with tolerances:
+- Brightness: ±5%
+- Hue: ±10° (with 360° wraparound handling)
+- Saturation: ±10%
+- Kelvin (color temperature): ±200K
+
+**Important notes:**
+- Multiple scenes can be detected as "active" simultaneously if they have similar/overlapping settings
+- The system tracks which specific scene you activated and waits for that one to be detected
+- Small scenes (2-3 lights) require all lights to match since 1 mismatch drops below 70%
+- External changes take up to 5 seconds to reflect in the UI
 
 ### Manual Refresh Triggers
 - **After toggling individual lights** - 500ms delay
@@ -308,7 +326,7 @@ The theme toggle button is located in the header (top-right area) with intuitive
 
 **constants.py** - Centralized Constants
 - Rate limits (LIFX: 120/min, Flask endpoints: various)
-- Scene detection thresholds (brightness: 5%, hue: 10°, saturation: 10%, scene: 80%)
+- Scene detection thresholds (brightness: 5%, hue: 10°, saturation: 10%, kelvin: 200K, scene: 70%)
 - Claude model options with descriptions and pricing
 - HTTP status codes
 
@@ -377,8 +395,12 @@ The theme toggle button is located in the header (top-right area) with intuitive
 **Solution**: App tracks rate limits automatically. Wait for limit reset (shown in error message)
 
 ### Scene Detection
-**Problem**: Scenes not detecting as active when they should be
-**Solution**: Adjust thresholds in constants.py (SCENE_MATCH_THRESHOLD, brightness/hue/saturation tolerances)
+**Problem**: Scene shows as active but shouldn't (or vice versa)
+**Context**: Scene detection is inherently fuzzy - see "Scene Detection (Hybrid Approach)" section above.
+**Solutions**:
+- Adjust `SCENE_MATCH_THRESHOLD` in constants.py (default 0.7 = 70%)
+- Adjust individual tolerances: `BRIGHTNESS_TOLERANCE`, `HUE_TOLERANCE_DEGREES`, `SATURATION_TOLERANCE`, `KELVIN_TOLERANCE`
+- Use debug endpoint: `GET /api/scene/<uuid>/debug` to see exactly what's matching/not matching
 
 ## Code Quality Improvements
 

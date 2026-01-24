@@ -19,7 +19,8 @@ BRIGHTNESS_TOLERANCE = 0.05  # 5% tolerance for brightness matching
 SATURATION_TOLERANCE = 0.1   # 10% tolerance for saturation matching
 HUE_TOLERANCE_DEGREES = 10   # degrees tolerance for hue matching
 HUE_WRAPAROUND_THRESHOLD = 350  # degrees - handle 360 degree wraparound
-SCENE_MATCH_THRESHOLD = 0.8  # 80% of lights must match for scene to be active
+KELVIN_TOLERANCE = 200  # kelvin tolerance for color temperature matching
+SCENE_MATCH_THRESHOLD = 0.7  # 70% of lights must match for scene to be active
 
 # Claude AI Configuration
 CLAUDE_MAX_TOKENS = 1000

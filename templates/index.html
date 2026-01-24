@@ -13,8 +13,11 @@
         <header>
             <h1>Via Clara</h1>
             <div class="loading-indicator" id="loading">
-                <div class="spinner"></div>
-                <span>Refreshing...</span>
+                <div class="wave-line">
+                    <span></span><span></span><span></span><span></span><span></span>
+                    <span></span><span></span><span></span><span></span><span></span>
+                    <span></span><span></span><span></span><span></span><span></span>
+                </div>
             </div>
             <div class="header-actions">
                 <button id="theme-toggle" class="icon-button-header" title="Toggle theme" aria-label="Toggle light/dark theme">
@@ -173,7 +176,9 @@
                             type="password"
                             id="lifx-token-input"
                             placeholder="Enter your LIFX API token..."
-                            autocomplete="off"
+                            autocomplete="one-time-code"
+                            data-lpignore="true"
+                            data-form-type="other"
                         />
                         <button id="lifx-token-toggle" class="toggle-visibility-btn" title="Show/Hide">
                             <span class="material-icons">visibility</span>
@@ -196,7 +201,9 @@
                             type="password"
                             id="claude-key-input"
                             placeholder="Enter your Claude API key..."
-                            autocomplete="off"
+                            autocomplete="one-time-code"
+                            data-lpignore="true"
+                            data-form-type="other"
                         />
                         <button id="claude-key-toggle" class="toggle-visibility-btn" title="Show/Hide">
                             <span class="material-icons">visibility</span>
