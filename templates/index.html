@@ -13,25 +13,33 @@
         <header>
             <h1>Via Clara</h1>
             <div class="loading-indicator" id="loading">
-                <div class="spinner"></div>
-                <span>Refreshing...</span>
+                <div class="wave-line">
+                    <span></span><span></span><span></span><span></span><span></span>
+                    <span></span><span></span><span></span><span></span><span></span>
+                    <span></span><span></span><span></span><span></span><span></span>
+                </div>
             </div>
-            <button id="settings-button" class="settings-button" title="Settings">
-                <span class="material-icons">settings</span>
-            </button>
+            <div class="header-actions">
+                <button id="theme-toggle" class="icon-button-header" title="Toggle theme" aria-label="Toggle light/dark theme">
+                    <span class="material-icons">dark_mode</span>
+                </button>
+                <button id="settings-button" class="settings-button" title="Settings" aria-label="Open settings">
+                    <span class="material-icons">settings</span>
+                </button>
+            </div>
         </header>
         
-        <section class="natural-language-section">
+        <section class="natural-language-section" aria-label="Natural language control">
             <div class="input-container">
-                <input type="text" id="natural-language-input" placeholder="Ask me to control your lights... (e.g., 'turn on bedroom lights', 'set living room to blue')" />
-                <button id="natural-language-submit" class="submit-btn">
+                <input type="text" id="natural-language-input" name="command" autocomplete="one-time-code" readonly onfocus="this.removeAttribute('readonly');" placeholder="Ask me to control your lights... (e.g., 'turn on bedroom lights', 'set living room to blue')" aria-label="Natural language command input" />
+                <button id="natural-language-submit" class="submit-btn" aria-label="Submit command">
                     <span class="material-icons">send</span>
                 </button>
-                <button id="pipeline-toggle" class="pipeline-toggle-btn" title="Enable pipeline tracking">
+                <button id="pipeline-toggle" class="pipeline-toggle-btn" title="Enable pipeline tracking" aria-label="Toggle pipeline tracking">
                     <span class="material-icons">visibility_off</span>
                 </button>
             </div>
-            <div id="natural-language-response" class="response-container"></div>
+            <div id="natural-language-response" class="response-container" role="status" aria-live="polite"></div>
             
             <!-- Processing Pipeline Visualization -->
             <div id="processing-pipeline" class="pipeline-container">
@@ -116,24 +124,24 @@
             </div>
         </section>
 
-        <section class="pinned-section" id="pinned-section" style="display: none;">
-            <h2><span class="material-icons">push_pin</span> Pinned</h2>
-            <div id="pinned-container" class="pinned-grid"></div>
+        <section class="pinned-section" id="pinned-section" style="display: none;" aria-label="Pinned items">
+            <h2><span class="material-icons" aria-hidden="true">push_pin</span> Pinned</h2>
+            <div id="pinned-container" class="pinned-grid" role="list"></div>
         </section>
 
-        <section class="scenes-section">
+        <section class="scenes-section" aria-label="Light scenes">
             <h2>Scenes</h2>
-            <div id="scenes-container" class="scenes-grid"></div>
+            <div id="scenes-container" class="scenes-grid" role="list"></div>
         </section>
-        
-        <section class="rooms-section">
+
+        <section class="rooms-section" aria-label="Room controls">
             <h2>Rooms</h2>
-            <div id="rooms-container" class="rooms-grid"></div>
+            <div id="rooms-container" class="rooms-grid" role="list"></div>
         </section>
-        
-        <section class="lights-section">
+
+        <section class="lights-section" aria-label="Individual lights">
             <h2>Lights</h2>
-            <div id="lights-container" class="lights-grid"></div>
+            <div id="lights-container" class="lights-grid" role="list"></div>
         </section>
     </div>
 
@@ -168,7 +176,9 @@
                             type="password"
                             id="lifx-token-input"
                             placeholder="Enter your LIFX API token..."
-                            autocomplete="off"
+                            autocomplete="one-time-code"
+                            data-lpignore="true"
+                            data-form-type="other"
                         />
                         <button id="lifx-token-toggle" class="toggle-visibility-btn" title="Show/Hide">
                             <span class="material-icons">visibility</span>
@@ -191,7 +201,9 @@
                             type="password"
                             id="claude-key-input"
                             placeholder="Enter your Claude API key..."
-                            autocomplete="off"
+                            autocomplete="one-time-code"
+                            data-lpignore="true"
+                            data-form-type="other"
                         />
                         <button id="claude-key-toggle" class="toggle-visibility-btn" title="Show/Hide">
                             <span class="material-icons">visibility</span>

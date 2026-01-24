@@ -18,7 +18,7 @@ Star it if ya like it.
 - **Individual Light Control via natural language requests** - Toggle, adjust brightness, change colors, etc (details below)
 - **Room/Group Management** - Control multiple lights at once
 - **Scene Activation** - One-click scene switching with visual feedback
-- **Real-time Status** - Auto-refresh every 10 seconds
+- **Real-time Status** - Auto-refresh every 5 seconds
 - **Multi-Zone Support** - Create gradients by describing them on LIFX Beam and Strip devices
 
 Request example
@@ -37,6 +37,21 @@ And the result
 ### Pinning Objects
 - **Quick access** - Pin your favorite scenes, rooms, or lights
 - **Double-right-click** to pin/unpin any item
+
+### A Note on Scene Detection
+
+The LIFX API doesn't provide a "is this scene active?" endpoint, so Via Clara uses a **hybrid approach**:
+
+1. **Click a scene** → Purple "activating" badge appears immediately
+2. **During transition** → Activating state persists (scenes can have 10+ second transitions)
+3. **Backend polling** → Server compares light states every 5 seconds (70% match threshold)
+4. **Transition complete** → Flips to green "active" badge when detected
+
+**What this means for you:**
+- Activating via dashboard = immediate "activating" feedback, then "active" when lights finish transitioning
+- Activating via LIFX app/Alexa = detected within 5 seconds
+- Multiple similar scenes may show as "active" simultaneously (they share light settings)
+- Tune thresholds in `constants.py` if needed (`SCENE_MATCH_THRESHOLD`, tolerances for brightness/hue/kelvin)
 
 ##  Quick Start with Flask
 
@@ -280,6 +295,7 @@ You can edit the system prompt in Settings to:
 - `GET /api/lights` - Get all lights
 - `GET /api/scenes` - Get all scenes
 - `GET /api/scenes/status/batch` - Get scene statuses (optimized)
+- `GET /api/scene/<uuid>/debug` - Debug scene matching (see expected vs actual)
 - `PUT /api/toggle/<selector>` - Toggle light/group
 - `PUT /api/scene/<uuid>` - Activate scene
 - `PUT /api/group/<id>/toggle` - Toggle room

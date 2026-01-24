@@ -116,11 +116,9 @@ def get_claude_client():
     """Get Claude client with current API key from config"""
     return anthropic.Anthropic(api_key=config.get('claude_api_key'))
 
-claude_client = get_claude_client()
-
-headers = {
-    "Authorization": f"Bearer {LIFX_TOKEN}",
-}
+def get_lifx_headers():
+    """Get LIFX API headers with current token from config"""
+    return {"Authorization": f"Bearer {config.get('lifx_token')}"}
 
 class RateLimitTracker:
     def __init__(self):
@@ -168,7 +166,7 @@ def index():
 @app.route('/api/lights')
 @limiter.limit(FLASK_LIGHTS_RATE_LIMIT)
 def get_lights():
-    response = make_lifx_request('GET', f"{BASE_URL}/lights/all", headers=headers)
+    response = make_lifx_request('GET', f"{BASE_URL}/lights/all", headers=get_lifx_headers())
     if isinstance(response, tuple):
         return response
     return jsonify(response.json())
@@ -176,7 +174,7 @@ def get_lights():
 @app.route('/api/scenes')
 @limiter.limit(FLASK_LIGHTS_RATE_LIMIT)
 def get_scenes():
-    response = make_lifx_request('GET', f"{BASE_URL}/scenes", headers=headers)
+    response = make_lifx_request('GET', f"{BASE_URL}/scenes", headers=get_lifx_headers())
     if isinstance(response, tuple):
         return response
     return jsonify(response.json())
@@ -184,7 +182,7 @@ def get_scenes():
 @app.route('/api/toggle/<selector>', methods=['PUT'])
 @limiter.limit(FLASK_TOGGLE_RATE_LIMIT)
 def toggle_light(selector):
-    response = make_lifx_request('POST', f"{BASE_URL}/lights/{selector}/toggle", headers=headers)
+    response = make_lifx_request('POST', f"{BASE_URL}/lights/{selector}/toggle", headers=get_lifx_headers())
     if isinstance(response, tuple):
         return response
     return jsonify({"status": response.status_code})
@@ -194,7 +192,7 @@ def toggle_light(selector):
 def activate_scene(scene_uuid):
     # Let scenes use their natural timing - no duration override
     response = make_lifx_request('PUT', f"{BASE_URL}/scenes/scene_id:{scene_uuid}/activate",
-                          headers=headers)
+                          headers=get_lifx_headers())
     if isinstance(response, tuple):
         return response
     return jsonify({"status": response.status_code})
@@ -205,12 +203,12 @@ def get_all_scene_statuses():
     """Get status for all scenes using SceneMatcher"""
     try:
         # Get current lights state
-        lights_response = make_lifx_request('GET', f"{BASE_URL}/lights/all", headers=headers)
+        lights_response = make_lifx_request('GET', f"{BASE_URL}/lights/all", headers=get_lifx_headers())
         if isinstance(lights_response, tuple):
             return lights_response
 
         # Get scene details
-        scenes_response = make_lifx_request('GET', f"{BASE_URL}/scenes", headers=headers)
+        scenes_response = make_lifx_request('GET', f"{BASE_URL}/scenes", headers=get_lifx_headers())
         if isinstance(scenes_response, tuple):
             return scenes_response
 
@@ -234,12 +232,12 @@ def get_scene_status(scene_uuid):
     """Get status for a specific scene using SceneMatcher"""
     try:
         # Get current lights state
-        lights_response = make_lifx_request('GET', f"{BASE_URL}/lights/all", headers=headers)
+        lights_response = make_lifx_request('GET', f"{BASE_URL}/lights/all", headers=get_lifx_headers())
         if isinstance(lights_response, tuple):
             return lights_response
 
         # Get scene details
-        scenes_response = make_lifx_request('GET', f"{BASE_URL}/scenes", headers=headers)
+        scenes_response = make_lifx_request('GET', f"{BASE_URL}/scenes", headers=get_lifx_headers())
         if isinstance(scenes_response, tuple):
             return scenes_response
 
@@ -262,10 +260,91 @@ def get_scene_status(scene_uuid):
     except Exception as e:
         return jsonify({"error": str(e), "active": False}), HTTP_SERVER_ERROR
 
+@app.route('/api/scene/<scene_uuid>/debug')
+@limiter.limit(FLASK_LIGHTS_RATE_LIMIT)
+def debug_scene_status(scene_uuid):
+    """Debug endpoint to see exactly why a scene matches or doesn't match"""
+    try:
+        lights_response = make_lifx_request('GET', f"{BASE_URL}/lights/all", headers=get_lifx_headers())
+        if isinstance(lights_response, tuple):
+            return lights_response
+
+        scenes_response = make_lifx_request('GET', f"{BASE_URL}/scenes", headers=get_lifx_headers())
+        if isinstance(scenes_response, tuple):
+            return scenes_response
+
+        lights_data = lights_response.json()
+        scenes_data = scenes_response.json()
+
+        target_scene = next(
+            (scene for scene in scenes_data if scene['uuid'] == scene_uuid),
+            None
+        )
+
+        if not target_scene:
+            return error_response("Scene not found", HTTP_NOT_FOUND)
+
+        # Detailed debug info for each state in the scene
+        debug_states = []
+        for scene_state in target_scene.get('states', []):
+            selector = scene_state.get('selector')
+            matching_lights = SceneMatcher.find_matching_lights(lights_data, selector)
+
+            state_debug = {
+                "selector": selector,
+                "expected": {
+                    "power": scene_state.get('power'),
+                    "brightness": scene_state.get('brightness'),
+                    "color": scene_state.get('color')
+                },
+                "matching_lights": []
+            }
+
+            for light in matching_lights:
+                light_debug = {
+                    "name": light.get('label'),
+                    "id": light.get('id'),
+                    "actual": {
+                        "power": light.get('power'),
+                        "brightness": light.get('brightness'),
+                        "color": light.get('color')
+                    },
+                    "matches": {
+                        "power": SceneMatcher.check_power_match(light, scene_state),
+                        "brightness": SceneMatcher.check_brightness_match(light, scene_state),
+                        "color": SceneMatcher.check_color_match(light, scene_state),
+                        "overall": SceneMatcher.light_matches_state(light, scene_state)
+                    }
+                }
+                state_debug["matching_lights"].append(light_debug)
+
+            # Did any light match this state?
+            state_debug["state_matched"] = any(
+                l["matches"]["overall"] for l in state_debug["matching_lights"]
+            )
+            debug_states.append(state_debug)
+
+        matched_count = sum(1 for s in debug_states if s["state_matched"])
+        total_states = len(debug_states)
+
+        return jsonify({
+            "scene_name": target_scene.get('name'),
+            "scene_uuid": scene_uuid,
+            "matched_states": matched_count,
+            "total_states": total_states,
+            "match_percentage": round((matched_count / total_states) * 100, 1) if total_states > 0 else 0,
+            "threshold": SCENE_MATCH_THRESHOLD * 100,
+            "is_active": (matched_count / total_states) >= SCENE_MATCH_THRESHOLD if total_states > 0 else False,
+            "states": debug_states
+        })
+
+    except Exception as e:
+        return error_response(str(e), HTTP_SERVER_ERROR)
+
 @app.route('/api/group/<group_id>/toggle', methods=['PUT'])
 @limiter.limit(FLASK_TOGGLE_RATE_LIMIT)
 def toggle_group(group_id):
-    response = make_lifx_request('POST', f"{BASE_URL}/lights/group_id:{group_id}/toggle", headers=headers)
+    response = make_lifx_request('POST', f"{BASE_URL}/lights/group_id:{group_id}/toggle", headers=get_lifx_headers())
     if isinstance(response, tuple):
         return response
     return jsonify({"status": response.status_code})
@@ -282,7 +361,7 @@ def set_light_state(selector):
         data['duration'] = CLAUDE_DEFAULT_DURATION
 
     response = make_lifx_request('PUT', f"{BASE_URL}/lights/{selector}/state",
-                                headers=headers, json=data)
+                                headers=get_lifx_headers(), json=data)
     if isinstance(response, tuple):
         return response
     return jsonify({"status": response.status_code, "results": response.json()})
@@ -346,10 +425,8 @@ def update_settings():
     # Apply updates
     config.update(updates)
 
-    # Reinitialize clients with new credentials
-    global claude_client, headers
-    claude_client = get_claude_client()
-    headers = {"Authorization": f"Bearer {config.get('lifx_token')}"}
+    # Note: get_claude_client() and get_lifx_headers() will automatically
+    # use the updated config values on their next invocation
 
     return success_response({
         "message": "Settings updated successfully",
@@ -382,8 +459,8 @@ def process_natural_language():
             return error_response("No request provided", HTTP_BAD_REQUEST)
 
         # Get current lights and scenes for context
-        lights_response = make_lifx_request('GET', f"{BASE_URL}/lights/all", headers=headers)
-        scenes_response = make_lifx_request('GET', f"{BASE_URL}/scenes", headers=headers)
+        lights_response = make_lifx_request('GET', f"{BASE_URL}/lights/all", headers=get_lifx_headers())
+        scenes_response = make_lifx_request('GET', f"{BASE_URL}/scenes", headers=get_lifx_headers())
 
         if isinstance(lights_response, tuple) or isinstance(scenes_response, tuple):
             return error_response("Failed to fetch LIFX data", HTTP_SERVER_ERROR)
@@ -459,15 +536,15 @@ def process_natural_language():
             if "/api/toggle/" in endpoint:
                 light_id = endpoint.split("/api/toggle/")[1]
                 lifx_url = f"{BASE_URL}/lights/{light_id}/toggle"
-                response = make_lifx_request('POST', lifx_url, headers=headers)
+                response = make_lifx_request('POST', lifx_url, headers=get_lifx_headers())
             elif "/api/scene/" in endpoint:
                 scene_uuid = endpoint.split("/api/scene/")[1]
                 lifx_url = f"{BASE_URL}/scenes/scene_id:{scene_uuid}/activate"
-                response = make_lifx_request('PUT', lifx_url, headers=headers, json={"duration": CLAUDE_DEFAULT_DURATION})
+                response = make_lifx_request('PUT', lifx_url, headers=get_lifx_headers(), json={"duration": CLAUDE_DEFAULT_DURATION})
             elif "/api/group/" in endpoint and "/toggle" in endpoint:
                 group_id = endpoint.split("/api/group/")[1].split("/toggle")[0]
                 lifx_url = f"{BASE_URL}/lights/group_id:{group_id}/toggle"
-                response = make_lifx_request('POST', lifx_url, headers=headers)
+                response = make_lifx_request('POST', lifx_url, headers=get_lifx_headers())
             elif "/api/lights/" in endpoint and "/state" in endpoint:
                 # Extract selector from endpoint like "/api/lights/group:bedroom/state"
                 selector = endpoint.split("/api/lights/")[1].split("/state")[0]
@@ -475,7 +552,7 @@ def process_natural_language():
                     # URL-encode pipe character for zone selectors
                     encoded_selector = selector.replace('|', '%7C')
                     lifx_url = f"{BASE_URL}/lights/{encoded_selector}/state"
-                    response = make_lifx_request('PUT', lifx_url, headers=headers, json=body)
+                    response = make_lifx_request('PUT', lifx_url, headers=get_lifx_headers(), json=body)
 
                     # Add delay between zone commands to prevent interference
                     if '|' in selector:
@@ -511,7 +588,7 @@ def process_natural_language():
             else:
                 try:
                     response_data = response.json() if hasattr(response, 'json') else {}
-                except:
+                except (ValueError, AttributeError, TypeError):
                     response_data = {}
 
                 # Get more detailed response info for state changes
@@ -559,4 +636,5 @@ def process_natural_language():
         return error_response(str(e), HTTP_SERVER_ERROR)
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
+    app.run(debug=debug_mode, host='0.0.0.0', port=5000)

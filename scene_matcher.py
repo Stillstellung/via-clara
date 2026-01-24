@@ -9,6 +9,7 @@ from constants import (
     SATURATION_TOLERANCE,
     HUE_TOLERANCE_DEGREES,
     HUE_WRAPAROUND_THRESHOLD,
+    KELVIN_TOLERANCE,
     SCENE_MATCH_THRESHOLD
 )
 
@@ -128,6 +129,20 @@ class SceneMatcher:
         return abs(actual_sat - expected_sat) <= SATURATION_TOLERANCE
 
     @staticmethod
+    def check_kelvin_match(expected_kelvin: int, actual_kelvin: int) -> bool:
+        """
+        Check if color temperature matches (within tolerance).
+
+        Args:
+            expected_kelvin: Expected color temperature (1500-9000K)
+            actual_kelvin: Actual color temperature (1500-9000K)
+
+        Returns:
+            True if kelvin matches within tolerance
+        """
+        return abs(actual_kelvin - expected_kelvin) <= KELVIN_TOLERANCE
+
+    @staticmethod
     def check_color_match(light: Dict, expected_state: Dict) -> bool:
         """
         Check if light color matches expected.
@@ -156,6 +171,13 @@ class SceneMatcher:
         if 'saturation' in expected_color and 'saturation' in actual_color:
             if not SceneMatcher.check_saturation_match(
                 expected_color['saturation'], actual_color['saturation']
+            ):
+                return False
+
+        # Check kelvin (color temperature) if present
+        if 'kelvin' in expected_color and 'kelvin' in actual_color:
+            if not SceneMatcher.check_kelvin_match(
+                expected_color['kelvin'], actual_color['kelvin']
             ):
                 return False
 

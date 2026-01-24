@@ -41,7 +41,7 @@ def handle_lifx_response(
             if success_message:
                 data['message'] = success_message
             return jsonify(data), response.status_code
-        except Exception:
+        except (ValueError, AttributeError, TypeError):
             return jsonify({
                 "status": "success",
                 "status_code": response.status_code
@@ -50,7 +50,7 @@ def handle_lifx_response(
     # Handle errors
     try:
         error_data = response.json()
-    except Exception:
+    except (ValueError, AttributeError, TypeError):
         error_data = {"error": "Unknown error"}
 
     return jsonify(error_data), response.status_code
