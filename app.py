@@ -203,12 +203,12 @@ def get_all_scene_statuses():
     """Get status for all scenes using SceneMatcher"""
     try:
         # Get current lights state
-        lights_response = make_lifx_request('GET', f"{BASE_URL}/lights/all", headers=headers)
+        lights_response = make_lifx_request('GET', f"{BASE_URL}/lights/all", headers=get_lifx_headers())
         if isinstance(lights_response, tuple):
             return lights_response
 
         # Get scene details
-        scenes_response = make_lifx_request('GET', f"{BASE_URL}/scenes", headers=headers)
+        scenes_response = make_lifx_request('GET', f"{BASE_URL}/scenes", headers=get_lifx_headers())
         if isinstance(scenes_response, tuple):
             return scenes_response
 
@@ -232,12 +232,12 @@ def get_scene_status(scene_uuid):
     """Get status for a specific scene using SceneMatcher"""
     try:
         # Get current lights state
-        lights_response = make_lifx_request('GET', f"{BASE_URL}/lights/all", headers=headers)
+        lights_response = make_lifx_request('GET', f"{BASE_URL}/lights/all", headers=get_lifx_headers())
         if isinstance(lights_response, tuple):
             return lights_response
 
         # Get scene details
-        scenes_response = make_lifx_request('GET', f"{BASE_URL}/scenes", headers=headers)
+        scenes_response = make_lifx_request('GET', f"{BASE_URL}/scenes", headers=get_lifx_headers())
         if isinstance(scenes_response, tuple):
             return scenes_response
 

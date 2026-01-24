@@ -861,14 +861,15 @@ async function loadSettings() {
         const settings = await response.json();
         currentSettings = settings;
 
-        // Update status indicator
+        // Update status indicator - only show if NOT configured
         const statusElement = document.getElementById('config-status');
         const statusText = document.getElementById('config-status-text');
 
         if (settings.is_configured) {
-            statusElement.className = 'config-status configured';
-            statusText.textContent = 'Configuration complete';
+            // Hide the status indicator when config is complete (it's only for warnings)
+            statusElement.style.display = 'none';
         } else {
+            statusElement.style.display = 'flex';
             statusElement.className = 'config-status not-configured';
             statusText.textContent = 'Configuration required - please enter your API credentials';
         }
@@ -882,6 +883,9 @@ async function loadSettings() {
         // Don't populate actual values for security
         document.getElementById('lifx-token-input').value = '';
         document.getElementById('claude-key-input').value = '';
+
+        // Update password toggle button states (disabled when input is empty)
+        updatePasswordToggleStates();
 
         // Populate system prompt textarea
         document.getElementById('system-prompt-textarea').value = settings.system_prompt || '';
@@ -955,6 +959,18 @@ async function saveSettings() {
         if (result.success) {
             showSettingsMessage('Settings saved successfully!', 'success');
 
+            // Show "Configuration Saved" badge temporarily
+            const statusElement = document.getElementById('config-status');
+            const statusText = document.getElementById('config-status-text');
+            statusElement.style.display = 'flex';
+            statusElement.className = 'config-status configured';
+            statusText.textContent = 'Configuration Saved';
+
+            // Auto-hide the badge after 3 seconds
+            setTimeout(() => {
+                statusElement.style.display = 'none';
+            }, 3000);
+
             // Clear input fields
             document.getElementById('lifx-token-input').value = '';
             document.getElementById('claude-key-input').value = '';
@@ -985,6 +1001,11 @@ function togglePasswordVisibility(inputId, buttonId) {
     const button = document.getElementById(buttonId);
     const icon = button.querySelector('.material-icons');
 
+    // Only toggle if input has a value (not just placeholder)
+    if (!input.value) {
+        return; // Do nothing if input is empty
+    }
+
     if (input.type === 'password') {
         input.type = 'text';
         icon.textContent = 'visibility_off';
@@ -992,6 +1013,20 @@ function togglePasswordVisibility(inputId, buttonId) {
         input.type = 'password';
         icon.textContent = 'visibility';
     }
+}
+
+function updatePasswordToggleStates() {
+    // Update LIFX token toggle
+    const lifxInput = document.getElementById('lifx-token-input');
+    const lifxToggle = document.getElementById('lifx-token-toggle');
+    lifxToggle.disabled = !lifxInput.value;
+    lifxToggle.title = lifxInput.value ? 'Show/Hide' : 'Enter a value to toggle visibility';
+
+    // Update Claude key toggle
+    const claudeInput = document.getElementById('claude-key-input');
+    const claudeToggle = document.getElementById('claude-key-toggle');
+    claudeToggle.disabled = !claudeInput.value;
+    claudeToggle.title = claudeInput.value ? 'Show/Hide' : 'Enter a value to toggle visibility';
 }
 
 function showSettingsMessage(message, type = 'info') {
@@ -1090,6 +1125,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('claude-key-toggle').addEventListener('click', () => {
         togglePasswordVisibility('claude-key-input', 'claude-key-toggle');
     });
+
+    // Update toggle states when users type in password fields
+    document.getElementById('lifx-token-input').addEventListener('input', updatePasswordToggleStates);
+    document.getElementById('claude-key-input').addEventListener('input', updatePasswordToggleStates);
 
     // Restore default prompt button
     document.getElementById('restore-default-prompt').addEventListener('click', restoreDefaultPrompt);
