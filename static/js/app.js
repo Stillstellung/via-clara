@@ -5,9 +5,7 @@ let actionHistory = [];
 let pipelineTrackingEnabled = false;
 let sceneStatuses = new Map();
 let activatingScene = null; // Track scene currently being activated (API in flight)
-let activatingStartTime = null; // When activation started (for timeout fallback)
 let locallyActiveScene = null; // Track scene we activated locally (hybrid approach)
-const ACTIVATING_TIMEOUT_MS = 15000; // Max time to show "activating" before assuming done
 
 // Pinned items support
 let pinnedItems = new Map(); // key: id, value: {type, data}
