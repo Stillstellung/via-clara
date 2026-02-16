@@ -1102,6 +1102,23 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize theme before anything else
     initializeTheme();
 
+    // Auth-aware UI setup
+    const auth = window.VIA_CLARA_AUTH || {};
+    if (!auth.nlpEnabled) {
+        const nlpSection = document.querySelector('.natural-language-section');
+        if (nlpSection) nlpSection.style.display = 'none';
+    }
+
+    // Show user badge
+    const badge = document.getElementById('user-badge');
+    if (badge && auth.username) {
+        badge.textContent = auth.username;
+        badge.style.display = 'inline-block';
+        badge.style.color = 'var(--text-tertiary)';
+        badge.style.fontSize = 'var(--font-sm)';
+        badge.style.marginRight = '8px';
+    }
+
     // Load pinned items from localStorage before fetching data
     loadPinnedItems();
 
@@ -1132,49 +1149,51 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Settings button event listeners
-    document.getElementById('settings-button').addEventListener('click', openSettings);
-    document.getElementById('settings-close').addEventListener('click', closeSettings);
-    document.getElementById('settings-cancel').addEventListener('click', closeSettings);
-    document.getElementById('settings-save').addEventListener('click', saveSettings);
+    // Settings button event listeners (only if admin)
+    const settingsBtn = document.getElementById('settings-button');
+    if (settingsBtn) {
+        settingsBtn.addEventListener('click', openSettings);
+        document.getElementById('settings-close').addEventListener('click', closeSettings);
+        document.getElementById('settings-cancel').addEventListener('click', closeSettings);
+        document.getElementById('settings-save').addEventListener('click', saveSettings);
+    }
 
-    // Password visibility toggles
-    document.getElementById('lifx-token-toggle').addEventListener('click', () => {
-        togglePasswordVisibility('lifx-token-input', 'lifx-token-toggle');
-    });
-    document.getElementById('claude-key-toggle').addEventListener('click', () => {
-        togglePasswordVisibility('claude-key-input', 'claude-key-toggle');
-    });
+    // Settings-related listeners (only if settings modal exists)
+    if (settingsBtn) {
+        // Password visibility toggles
+        document.getElementById('lifx-token-toggle').addEventListener('click', () => {
+            togglePasswordVisibility('lifx-token-input', 'lifx-token-toggle');
+        });
+        document.getElementById('claude-key-toggle').addEventListener('click', () => {
+            togglePasswordVisibility('claude-key-input', 'claude-key-toggle');
+        });
 
-    // Clear masked values when user focuses to enter new key
-    document.getElementById('lifx-token-input').addEventListener('focus', function() {
-        if (this.dataset.masked === 'true') {
-            this.value = '';
-            this.dataset.masked = 'false';
-            updatePasswordToggleStates();
-        }
-    });
-    document.getElementById('claude-key-input').addEventListener('focus', function() {
-        if (this.dataset.masked === 'true') {
-            this.value = '';
-            this.dataset.masked = 'false';
-            updatePasswordToggleStates();
-        }
-    });
+        document.getElementById('lifx-token-input').addEventListener('focus', function() {
+            if (this.dataset.masked === 'true') {
+                this.value = '';
+                this.dataset.masked = 'false';
+                updatePasswordToggleStates();
+            }
+        });
+        document.getElementById('claude-key-input').addEventListener('focus', function() {
+            if (this.dataset.masked === 'true') {
+                this.value = '';
+                this.dataset.masked = 'false';
+                updatePasswordToggleStates();
+            }
+        });
 
-    // Update toggle states when users type in password fields
-    document.getElementById('lifx-token-input').addEventListener('input', updatePasswordToggleStates);
-    document.getElementById('claude-key-input').addEventListener('input', updatePasswordToggleStates);
+        document.getElementById('lifx-token-input').addEventListener('input', updatePasswordToggleStates);
+        document.getElementById('claude-key-input').addEventListener('input', updatePasswordToggleStates);
 
-    // Restore default prompt button
-    document.getElementById('restore-default-prompt').addEventListener('click', restoreDefaultPrompt);
+        document.getElementById('restore-default-prompt').addEventListener('click', restoreDefaultPrompt);
 
-    // Close modal on background click
-    document.getElementById('settings-modal').addEventListener('click', (e) => {
-        if (e.target.id === 'settings-modal') {
-            closeSettings();
-        }
-    });
+        document.getElementById('settings-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'settings-modal') {
+                closeSettings();
+            }
+        });
+    }
 
     // Close modal on Escape key
     document.addEventListener('keydown', (e) => {

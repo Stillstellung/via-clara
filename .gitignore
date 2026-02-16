@@ -55,6 +55,9 @@ Thumbs.db
 # Configuration files
 config.json
 
+# Database
+via_clara.db
+
 # AI context files (local development only)
 CLAUDE.md
 .worktrees

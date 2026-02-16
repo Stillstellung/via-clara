@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Via Clara - Login</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .login-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: var(--spacing-lg);
+        }
+        .login-card {
+            background-color: var(--bg-secondary);
+            border: 2px solid var(--border-primary);
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-2xl);
+            width: 100%;
+            max-width: 420px;
+            box-shadow: var(--shadow-xl);
+        }
+        .login-card h1 {
+            text-align: center;
+            font-size: var(--font-3xl);
+            font-weight: 300;
+            background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: var(--spacing-xl);
+        }
+        .login-field {
+            margin-bottom: var(--spacing-lg);
+        }
+        .login-field label {
+            display: block;
+            color: var(--text-secondary);
+            font-size: var(--font-sm);
+            margin-bottom: var(--spacing-sm);
+        }
+        .login-field input {
+            width: 100%;
+            padding: var(--spacing-md);
+            background-color: var(--bg-tertiary);
+            border: 2px solid var(--border-primary);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-size: var(--font-base);
+            outline: none;
+            transition: all var(--transition-normal);
+        }
+        .login-field input:focus {
+            border-color: var(--color-primary);
+            box-shadow: var(--glow-primary);
+        }
+        .login-btn {
+            width: 100%;
+            padding: var(--spacing-md);
+            background-color: var(--color-primary);
+            color: var(--bg-primary);
+            border: none;
+            border-radius: var(--radius-md);
+            font-size: var(--font-lg);
+            font-weight: 500;
+            cursor: pointer;
+            transition: all var(--transition-normal);
+        }
+        .login-btn:hover {
+            background-color: var(--color-primary-light);
+            box-shadow: var(--glow-primary);
+        }
+        .login-error {
+            background-color: var(--bg-tertiary);
+            border: 2px solid var(--color-error);
+            color: var(--color-error);
+            padding: var(--spacing-md);
+            border-radius: var(--radius-sm);
+            margin-bottom: var(--spacing-lg);
+            font-size: var(--font-sm);
+            text-align: center;
+        }
+        .login-footer {
+            text-align: center;
+            margin-top: var(--spacing-lg);
+        }
+        .login-footer a {
+            color: var(--text-tertiary);
+            font-size: var(--font-sm);
+            text-decoration: none;
+            transition: color var(--transition-fast);
+        }
+        .login-footer a:hover {
+            color: var(--color-primary);
+        }
+    </style>
+</head>
+<body data-theme="dark">
+    <div class="login-container">
+        <div class="login-card">
+            <h1>Via Clara</h1>
+            {% if error %}
+            <div class="login-error">{{ error }}</div>
+            {% endif %}
+            <form method="POST" action="/login">
+                <div class="login-field">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" required autofocus>
+                </div>
+                <div class="login-field">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <button type="submit" class="login-btn">Sign In</button>
+            </form>
+            <div class="login-footer">
+                <a href="/">Continue as guest</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

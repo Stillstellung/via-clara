@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 import requests
 import os
 import time
@@ -13,6 +13,12 @@ from config import config
 from constants import *
 from scene_matcher import SceneMatcher
 from api_utils import handle_lifx_response, error_response, success_response, validate_request_data
+from auth import (
+    get_db, get_current_user, get_user_permissions, user_is_admin,
+    filter_lights, filter_scenes, can_control_light, get_user_allowed_selectors,
+    require_admin, require_login, init_db
+)
+from werkzeug.security import generate_password_hash, check_password_hash
 
 load_dotenv()
 
@@ -65,6 +71,8 @@ IDENTIFYING MULTI-ZONE DEVICES:
 - If user mentions gradients/multiple colors for ONE device, treat as multi-zone
 - For rooms with mixed devices, handle Beam separately from regular lights
 
+IMPORTANT: You can ONLY control the lights shown in the context below. If the user asks about lights not in the context, explain that those lights are not available.
+
 Return a JSON response with:
 - "actions": array of action objects with "method", "endpoint", "description", and "body" (for state changes)
 - "summary": brief description of what will be done
@@ -100,6 +108,7 @@ Multi-zone gradient (for Beam/Strip devices):
 Only return valid JSON. Do not include any other text."""
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'via-clara-secret-key-change-in-production')
 
 limiter = Limiter(
     app=app,
@@ -159,9 +168,75 @@ def make_lifx_request(method, url, **kwargs):
     except requests.RequestException as e:
         return jsonify({"error": str(e)}), HTTP_SERVER_ERROR
 
+
+# ===========================
+# AUTH ROUTES
+# ===========================
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+
+        conn = get_db()
+        user = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+        conn.close()
+
+        if user and user['password_hash'] and check_password_hash(user['password_hash'], password):
+            session['user_id'] = user['id']
+            session['username'] = user['username']
+            session['is_admin'] = bool(user['is_admin'])
+            return redirect('/')
+        else:
+            return render_template('login.html', error='Invalid username or password')
+
+    return render_template('login.html')
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect('/')
+
+
+@app.route('/admin')
+def admin_page():
+    user = get_current_user()
+    if not user or not user.get('is_admin'):
+        return redirect('/login')
+    return render_template('admin.html')
+
+
+# ===========================
+# MAIN ROUTES
+# ===========================
+
 @app.route('/')
 def index():
-    return render_template('index.html')
+    user = get_current_user()
+    return render_template('index.html',
+                           user=user,
+                           is_admin=user_is_admin(user),
+                           is_logged_in=bool(session.get('user_id')))
+
+
+@app.route('/api/auth/status')
+def auth_status():
+    """Return current auth state for the frontend."""
+    user = get_current_user()
+    return jsonify({
+        'logged_in': bool(session.get('user_id')),
+        'username': user.get('username') if user else 'guest',
+        'is_admin': user_is_admin(user),
+        'is_guest': bool(user.get('is_guest')) if user else True,
+        'nlp_enabled': bool(user.get('nlp_enabled')) if user else False
+    })
+
+
+# ===========================
+# SCOPED API ROUTES
+# ===========================
 
 @app.route('/api/lights')
 @limiter.limit(FLASK_LIGHTS_RATE_LIMIT)
@@ -169,7 +244,15 @@ def get_lights():
     response = make_lifx_request('GET', f"{BASE_URL}/lights/all", headers=get_lifx_headers())
     if isinstance(response, tuple):
         return response
-    return jsonify(response.json())
+
+    user = get_current_user()
+    lights_data = response.json()
+
+    if user:
+        lights_data = filter_lights(lights_data, user)
+
+    return jsonify(lights_data)
+
 
 @app.route('/api/scenes')
 @limiter.limit(FLASK_LIGHTS_RATE_LIMIT)
@@ -177,45 +260,82 @@ def get_scenes():
     response = make_lifx_request('GET', f"{BASE_URL}/scenes", headers=get_lifx_headers())
     if isinstance(response, tuple):
         return response
-    return jsonify(response.json())
+
+    user = get_current_user()
+    scenes_data = response.json()
+
+    if user:
+        scenes_data = filter_scenes(scenes_data, user)
+
+    return jsonify(scenes_data)
+
 
 @app.route('/api/toggle/<selector>', methods=['PUT'])
 @limiter.limit(FLASK_TOGGLE_RATE_LIMIT)
 def toggle_light(selector):
-    response = make_lifx_request('POST', f"{BASE_URL}/lights/{selector}/toggle", headers=get_lifx_headers())
+    user = get_current_user()
+    if not user:
+        return error_response("Unauthorized", HTTP_UNAUTHORIZED)
+
+    # Check permission for this selector
+    check_selector = f"id:{selector}" if not selector.startswith('id:') and not selector.startswith('group') and selector != 'all' else selector
+    if not can_control_light(user, check_selector):
+        return error_response("You don't have permission to control this light", 403)
+
+    # Rewrite "all" for non-admin
+    effective_selector = selector
+    if selector == 'all' and not user.get('is_admin'):
+        effective_selector = get_user_allowed_selectors(user)
+        if not effective_selector:
+            return error_response("No lights available", 403)
+
+    response = make_lifx_request('POST', f"{BASE_URL}/lights/{effective_selector}/toggle", headers=get_lifx_headers())
     if isinstance(response, tuple):
         return response
     return jsonify({"status": response.status_code})
 
+
 @app.route('/api/scene/<scene_uuid>', methods=['PUT'])
 @limiter.limit(FLASK_TOGGLE_RATE_LIMIT)
 def activate_scene(scene_uuid):
-    # Let scenes use their natural timing - no duration override
+    user = get_current_user()
+    if not user:
+        return error_response("Unauthorized", HTTP_UNAUTHORIZED)
+
+    # Check scene permission
+    if not user.get('is_admin'):
+        perms = get_user_permissions(user['id'])
+        if scene_uuid not in perms.get('scenes', set()):
+            return error_response("You don't have permission to activate this scene", 403)
+
     response = make_lifx_request('PUT', f"{BASE_URL}/scenes/scene_id:{scene_uuid}/activate",
                           headers=get_lifx_headers())
     if isinstance(response, tuple):
         return response
     return jsonify({"status": response.status_code})
 
+
 @app.route('/api/scenes/status/batch')
 @limiter.limit(FLASK_LIGHTS_RATE_LIMIT)
 def get_all_scene_statuses():
     """Get status for all scenes using SceneMatcher"""
     try:
-        # Get current lights state
         lights_response = make_lifx_request('GET', f"{BASE_URL}/lights/all", headers=get_lifx_headers())
         if isinstance(lights_response, tuple):
             return lights_response
 
-        # Get scene details
         scenes_response = make_lifx_request('GET', f"{BASE_URL}/scenes", headers=get_lifx_headers())
         if isinstance(scenes_response, tuple):
             return scenes_response
 
+        user = get_current_user()
         lights_data = lights_response.json()
         scenes_data = scenes_response.json()
 
-        # Check status for all scenes using SceneMatcher
+        # Filter for user scope
+        if user:
+            scenes_data = filter_scenes(scenes_data, user)
+
         scene_statuses = {
             scene['uuid']: SceneMatcher.check_scene_status(scene, lights_data)
             for scene in scenes_data
@@ -226,17 +346,22 @@ def get_all_scene_statuses():
     except Exception as e:
         return error_response(str(e), HTTP_SERVER_ERROR)
 
+
 @app.route('/api/scene/<scene_uuid>/status')
 @limiter.limit(FLASK_LIGHTS_RATE_LIMIT)
 def get_scene_status(scene_uuid):
     """Get status for a specific scene using SceneMatcher"""
     try:
-        # Get current lights state
+        user = get_current_user()
+        if user and not user.get('is_admin'):
+            perms = get_user_permissions(user['id'])
+            if scene_uuid not in perms.get('scenes', set()):
+                return error_response("Scene not found", HTTP_NOT_FOUND)
+
         lights_response = make_lifx_request('GET', f"{BASE_URL}/lights/all", headers=get_lifx_headers())
         if isinstance(lights_response, tuple):
             return lights_response
 
-        # Get scene details
         scenes_response = make_lifx_request('GET', f"{BASE_URL}/scenes", headers=get_lifx_headers())
         if isinstance(scenes_response, tuple):
             return scenes_response
@@ -244,7 +369,6 @@ def get_scene_status(scene_uuid):
         lights_data = lights_response.json()
         scenes_data = scenes_response.json()
 
-        # Find the specific scene
         target_scene = next(
             (scene for scene in scenes_data if scene['uuid'] == scene_uuid),
             None
@@ -253,17 +377,21 @@ def get_scene_status(scene_uuid):
         if not target_scene:
             return error_response("Scene not found", HTTP_NOT_FOUND)
 
-        # Check status using SceneMatcher
         status = SceneMatcher.check_scene_status(target_scene, lights_data)
         return jsonify(status)
 
     except Exception as e:
         return jsonify({"error": str(e), "active": False}), HTTP_SERVER_ERROR
 
+
 @app.route('/api/scene/<scene_uuid>/debug')
 @limiter.limit(FLASK_LIGHTS_RATE_LIMIT)
 def debug_scene_status(scene_uuid):
-    """Debug endpoint to see exactly why a scene matches or doesn't match"""
+    """Debug endpoint - admin only"""
+    user = get_current_user()
+    if not user_is_admin(user):
+        return error_response("Admin access required", 403)
+
     try:
         lights_response = make_lifx_request('GET', f"{BASE_URL}/lights/all", headers=get_lifx_headers())
         if isinstance(lights_response, tuple):
@@ -284,7 +412,6 @@ def debug_scene_status(scene_uuid):
         if not target_scene:
             return error_response("Scene not found", HTTP_NOT_FOUND)
 
-        # Detailed debug info for each state in the scene
         debug_states = []
         for scene_state in target_scene.get('states', []):
             selector = scene_state.get('selector')
@@ -318,7 +445,6 @@ def debug_scene_status(scene_uuid):
                 }
                 state_debug["matching_lights"].append(light_debug)
 
-            # Did any light match this state?
             state_debug["state_matched"] = any(
                 l["matches"]["overall"] for l in state_debug["matching_lights"]
             )
@@ -341,46 +467,72 @@ def debug_scene_status(scene_uuid):
     except Exception as e:
         return error_response(str(e), HTTP_SERVER_ERROR)
 
+
 @app.route('/api/group/<group_id>/toggle', methods=['PUT'])
 @limiter.limit(FLASK_TOGGLE_RATE_LIMIT)
 def toggle_group(group_id):
+    user = get_current_user()
+    if not user:
+        return error_response("Unauthorized", HTTP_UNAUTHORIZED)
+
+    if not can_control_light(user, f"group_id:{group_id}"):
+        return error_response("You don't have permission to control this group", 403)
+
     response = make_lifx_request('POST', f"{BASE_URL}/lights/group_id:{group_id}/toggle", headers=get_lifx_headers())
     if isinstance(response, tuple):
         return response
     return jsonify({"status": response.status_code})
 
+
 @app.route('/api/lights/<selector>/state', methods=['PUT'])
 @limiter.limit(FLASK_TOGGLE_RATE_LIMIT)
 def set_light_state(selector):
+    user = get_current_user()
+    if not user:
+        return error_response("Unauthorized", HTTP_UNAUTHORIZED)
+
+    if not can_control_light(user, selector):
+        return error_response("You don't have permission to control this light", 403)
+
     data = request.get_json()
     if not data:
         return error_response("No state data provided", HTTP_BAD_REQUEST)
 
-    # Add default duration if not specified
     if 'duration' not in data:
         data['duration'] = CLAUDE_DEFAULT_DURATION
 
-    response = make_lifx_request('PUT', f"{BASE_URL}/lights/{selector}/state",
+    # Rewrite "all" selector for non-admin users to only their allowed selectors
+    effective_selector = selector
+    if selector == 'all' and not user.get('is_admin'):
+        effective_selector = get_user_allowed_selectors(user)
+        if not effective_selector:
+            return error_response("No lights available", 403)
+
+    response = make_lifx_request('PUT', f"{BASE_URL}/lights/{effective_selector}/state",
                                 headers=get_lifx_headers(), json=data)
     if isinstance(response, tuple):
         return response
     return jsonify({"status": response.status_code, "results": response.json()})
 
-# NEW ENDPOINTS: Settings Management
+
+# ===========================
+# SETTINGS MANAGEMENT
+# ===========================
 
 @app.route('/api/settings', methods=['GET'])
 @limiter.limit(FLASK_LIGHTS_RATE_LIMIT)
+@require_admin
 def get_settings():
-    """Get current settings (masked for security)"""
+    """Get current settings (masked for security) - admin only"""
     return jsonify(config.get_masked_config())
 
 @app.route('/api/settings', methods=['POST'])
 @limiter.limit(FLASK_SETTINGS_RATE_LIMIT)
+@require_admin
 def update_settings():
-    """Update application settings"""
+    """Update application settings - admin only"""
     data = request.get_json()
 
-    # Validate request
     validation_error = validate_request_data(data)
     if validation_error:
         return validation_error
@@ -388,7 +540,6 @@ def update_settings():
     updates = {}
     errors = []
 
-    # Validate and prepare LIFX token
     if 'lifx_token' in data:
         token = data['lifx_token'].strip()
         if token:
@@ -397,7 +548,6 @@ def update_settings():
             else:
                 updates['lifx_token'] = token
 
-    # Validate and prepare Claude API key
     if 'claude_api_key' in data:
         key = data['claude_api_key'].strip()
         if key:
@@ -406,7 +556,6 @@ def update_settings():
             else:
                 updates['claude_api_key'] = key
 
-    # Validate Claude model selection
     if 'claude_model' in data:
         model = data['claude_model']
         valid_models = [m['id'] for m in CLAUDE_MODELS]
@@ -415,18 +564,13 @@ def update_settings():
         else:
             updates['claude_model'] = model
 
-    # Handle system prompt (empty string means use default)
     if 'system_prompt' in data:
         updates['system_prompt'] = data['system_prompt'].strip()
 
     if errors:
         return error_response("; ".join(errors), HTTP_BAD_REQUEST)
 
-    # Apply updates
     config.update(updates)
-
-    # Note: get_claude_client() and get_lifx_headers() will automatically
-    # use the updated config values on their next invocation
 
     return success_response({
         "message": "Settings updated successfully",
@@ -448,10 +592,23 @@ def get_default_prompt():
         "default_prompt": DEFAULT_SYSTEM_PROMPT
     })
 
+
+# ===========================
+# NLP - SCOPED
+# ===========================
+
 @app.route('/api/natural-language', methods=['POST'])
 @limiter.limit(FLASK_NLP_RATE_LIMIT)
 def process_natural_language():
     try:
+        user = get_current_user()
+        if not user:
+            return error_response("Unauthorized", HTTP_UNAUTHORIZED)
+
+        # Check if NLP is enabled for this user
+        if not user.get('nlp_enabled') and not user.get('is_admin'):
+            return error_response("Natural language control is not enabled for your account", 403)
+
         data = request.get_json()
         user_request = data.get('request', '')
 
@@ -468,7 +625,11 @@ def process_natural_language():
         lights_data = lights_response.json()
         scenes_data = scenes_response.json()
 
-        # Create context for Claude
+        # CRITICAL: Filter lights and scenes to only what this user can see
+        lights_data = filter_lights(lights_data, user)
+        scenes_data = filter_scenes(scenes_data, user)
+
+        # Create context for Claude - ONLY includes user's entitled lights/scenes
         context = {
             "lights": lights_data,
             "scenes": scenes_data
@@ -493,9 +654,8 @@ def process_natural_language():
         # Parse Claude's response
         claude_response = message.content[0].text.strip()
 
-        # Strip markdown code blocks if present (newer models wrap JSON in ```json)
+        # Strip markdown code blocks if present
         if claude_response.startswith('```'):
-            # Remove opening ```json or ``` and closing ```
             claude_response = claude_response.removeprefix('```json').removeprefix('```')
             claude_response = claude_response.removesuffix('```')
             claude_response = claude_response.strip()
@@ -512,7 +672,7 @@ def process_natural_language():
         if "error" in parsed_response:
             return jsonify({"summary": parsed_response["error"], "success": False})
 
-        # Execute the actions
+        # Execute the actions - with permission checks
         results = []
         api_requests = []
         api_responses = []
@@ -523,7 +683,6 @@ def process_natural_language():
             description = action["description"]
             body = action.get("body")
 
-            # Track the API request details
             request_details = {
                 "method": method,
                 "endpoint": endpoint,
@@ -532,7 +691,44 @@ def process_natural_language():
             }
             api_requests.append(request_details)
 
-            # Execute the action based on endpoint
+            # Extract selector and verify permission before executing
+            selector = None
+            if "/api/toggle/" in endpoint:
+                light_id = endpoint.split("/api/toggle/")[1]
+                selector = f"id:{light_id}" if not light_id.startswith('id:') else light_id
+            elif "/api/group/" in endpoint and "/toggle" in endpoint:
+                group_id = endpoint.split("/api/group/")[1].split("/toggle")[0]
+                selector = f"group_id:{group_id}"
+            elif "/api/lights/" in endpoint and "/state" in endpoint:
+                selector = endpoint.split("/api/lights/")[1].split("/state")[0]
+
+            # Permission check for non-scene actions
+            if selector and not can_control_light(user, selector):
+                results.append({"action": description, "success": False, "error": "Permission denied"})
+                api_responses.append({
+                    "success": False,
+                    "description": description,
+                    "error": "Permission denied",
+                    "statusCode": 403
+                })
+                continue
+
+            # Scene permission check
+            if "/api/scene/" in endpoint and "/api/scene/" in endpoint:
+                scene_uuid = endpoint.split("/api/scene/")[1]
+                if not user.get('is_admin'):
+                    perms = get_user_permissions(user['id'])
+                    if scene_uuid not in perms.get('scenes', set()):
+                        results.append({"action": description, "success": False, "error": "Permission denied"})
+                        api_responses.append({
+                            "success": False,
+                            "description": description,
+                            "error": "Permission denied",
+                            "statusCode": 403
+                        })
+                        continue
+
+            # Execute the action
             if "/api/toggle/" in endpoint:
                 light_id = endpoint.split("/api/toggle/")[1]
                 lifx_url = f"{BASE_URL}/lights/{light_id}/toggle"
@@ -546,17 +742,21 @@ def process_natural_language():
                 lifx_url = f"{BASE_URL}/lights/group_id:{group_id}/toggle"
                 response = make_lifx_request('POST', lifx_url, headers=get_lifx_headers())
             elif "/api/lights/" in endpoint and "/state" in endpoint:
-                # Extract selector from endpoint like "/api/lights/group:bedroom/state"
                 selector = endpoint.split("/api/lights/")[1].split("/state")[0]
                 if body:
-                    # URL-encode pipe character for zone selectors
-                    encoded_selector = selector.replace('|', '%7C')
+                    # Rewrite "all" for non-admin users
+                    effective_selector = selector
+                    if selector == 'all' and not user.get('is_admin'):
+                        effective_selector = get_user_allowed_selectors(user)
+                        if not effective_selector:
+                            results.append({"action": description, "success": False, "error": "No lights available"})
+                            api_responses.append({"success": False, "description": description, "error": "No lights available", "statusCode": 403})
+                            continue
+                    encoded_selector = effective_selector.replace('|', '%7C')
                     lifx_url = f"{BASE_URL}/lights/{encoded_selector}/state"
                     response = make_lifx_request('PUT', lifx_url, headers=get_lifx_headers(), json=body)
-
-                    # Add delay between zone commands to prevent interference
                     if '|' in selector:
-                        time.sleep(0.3)  # 300ms delay for multi-zone commands
+                        time.sleep(0.3)
                 else:
                     results.append({"action": description, "success": False, "error": "No state data provided"})
                     api_responses.append({
@@ -591,9 +791,7 @@ def process_natural_language():
                 except (ValueError, AttributeError, TypeError):
                     response_data = {}
 
-                # Get more detailed response info for state changes
                 if "/state" in endpoint and response.status_code == HTTP_MULTI_STATUS:
-                    # Multi-status response, extract results
                     success_count = sum(1 for result in response_data.get('results', []) if result.get('status') == 'ok')
                     total_count = len(response_data.get('results', []))
                     results.append({"action": description, "success": True,
@@ -634,6 +832,155 @@ def process_natural_language():
 
     except Exception as e:
         return error_response(str(e), HTTP_SERVER_ERROR)
+
+
+# ===========================
+# ADMIN USER MANAGEMENT API
+# ===========================
+
+@app.route('/api/admin/users', methods=['GET'])
+@require_admin
+def list_users():
+    """List all users with their permissions."""
+    conn = get_db()
+    users = conn.execute("SELECT * FROM users ORDER BY is_admin DESC, is_guest DESC, username").fetchall()
+    result = []
+    for u in users:
+        perms = {}
+        perm_rows = conn.execute(
+            "SELECT permission_type, permission_value FROM user_permissions WHERE user_id = ?",
+            (u['id'],)
+        ).fetchall()
+        for row in perm_rows:
+            perms.setdefault(row['permission_type'], []).append(row['permission_value'])
+
+        result.append({
+            'id': u['id'],
+            'username': u['username'],
+            'is_admin': bool(u['is_admin']),
+            'is_guest': bool(u['is_guest']),
+            'nlp_enabled': bool(u['nlp_enabled']),
+            'permissions': perms
+        })
+    conn.close()
+    return jsonify({'users': result})
+
+
+@app.route('/api/admin/users', methods=['POST'])
+@require_admin
+def create_user():
+    """Create a new user."""
+    data = request.get_json()
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+
+    if not username or not password:
+        return error_response("Username and password required", HTTP_BAD_REQUEST)
+
+    if len(password) < 3:
+        return error_response("Password must be at least 3 characters", HTTP_BAD_REQUEST)
+
+    conn = get_db()
+    existing = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+    if existing:
+        conn.close()
+        return error_response("Username already exists", HTTP_BAD_REQUEST)
+
+    conn.execute(
+        "INSERT INTO users (username, password_hash, nlp_enabled) VALUES (?, ?, 1)",
+        (username, generate_password_hash(password))
+    )
+    conn.commit()
+    conn.close()
+    return success_response({"message": f"User '{username}' created"})
+
+
+@app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
+@require_admin
+def delete_user(user_id):
+    """Delete a user."""
+    conn = get_db()
+    user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        conn.close()
+        return error_response("User not found", HTTP_NOT_FOUND)
+
+    if user['is_admin'] or user['is_guest']:
+        conn.close()
+        return error_response("Cannot delete admin or guest user", HTTP_BAD_REQUEST)
+
+    conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+    return success_response({"message": "User deleted"})
+
+
+@app.route('/api/admin/users/<int:user_id>/permissions', methods=['GET'])
+@require_admin
+def get_user_perms(user_id):
+    """Get permissions for a user."""
+    conn = get_db()
+    user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        conn.close()
+        return error_response("User not found", HTTP_NOT_FOUND)
+
+    perm_rows = conn.execute(
+        "SELECT permission_type, permission_value FROM user_permissions WHERE user_id = ?",
+        (user_id,)
+    ).fetchall()
+    conn.close()
+
+    perms = {'lights': [], 'groups': [], 'scenes': []}
+    for row in perm_rows:
+        if row['permission_type'] in perms:
+            perms[row['permission_type']].append(row['permission_value'])
+
+    return jsonify({
+        'permissions': perms,
+        'nlp_enabled': bool(user['nlp_enabled'])
+    })
+
+
+@app.route('/api/admin/users/<int:user_id>/permissions', methods=['POST'])
+@require_admin
+def set_user_perms(user_id):
+    """Set permissions for a user."""
+    conn = get_db()
+    user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        conn.close()
+        return error_response("User not found", HTTP_NOT_FOUND)
+
+    data = request.get_json()
+
+    # Update NLP setting
+    nlp_enabled = 1 if data.get('nlp_enabled', False) else 0
+    conn.execute("UPDATE users SET nlp_enabled = ? WHERE id = ?", (nlp_enabled, user_id))
+
+    # Replace all permissions
+    conn.execute("DELETE FROM user_permissions WHERE user_id = ?", (user_id,))
+
+    for light_id in data.get('lights', []):
+        conn.execute(
+            "INSERT INTO user_permissions (user_id, permission_type, permission_value) VALUES (?, 'lights', ?)",
+            (user_id, str(light_id))
+        )
+    for group_id in data.get('groups', []):
+        conn.execute(
+            "INSERT INTO user_permissions (user_id, permission_type, permission_value) VALUES (?, 'groups', ?)",
+            (user_id, str(group_id))
+        )
+    for scene_uuid in data.get('scenes', []):
+        conn.execute(
+            "INSERT INTO user_permissions (user_id, permission_type, permission_value) VALUES (?, 'scenes', ?)",
+            (user_id, scene_uuid)
+        )
+
+    conn.commit()
+    conn.close()
+    return success_response({"message": "Permissions updated"})
+
 
 if __name__ == '__main__':
     debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'

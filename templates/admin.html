@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Via Clara - Admin Settings</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .admin-container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: var(--spacing-xl);
+        }
+        .admin-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--spacing-2xl);
+        }
+        .admin-header h1 {
+            font-size: var(--font-3xl);
+            font-weight: 300;
+            background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .admin-nav {
+            display: flex;
+            gap: var(--spacing-md);
+        }
+        .admin-nav a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            padding: var(--spacing-sm) var(--spacing-md);
+            border-radius: var(--radius-sm);
+            transition: all var(--transition-normal);
+        }
+        .admin-nav a:hover {
+            color: var(--color-primary);
+            background-color: var(--bg-tertiary);
+        }
+
+        .card {
+            background-color: var(--bg-secondary);
+            border: 2px solid var(--border-primary);
+            border-radius: var(--radius-md);
+            padding: var(--spacing-xl);
+            margin-bottom: var(--spacing-xl);
+        }
+        .card h2 {
+            color: var(--color-secondary);
+            font-size: var(--font-xl);
+            font-weight: 500;
+            margin-bottom: var(--spacing-lg);
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+        }
+        .user-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: var(--spacing-md);
+            background-color: var(--bg-tertiary);
+            border-radius: var(--radius-sm);
+            margin-bottom: var(--spacing-sm);
+            border-left: 4px solid var(--border-primary);
+        }
+        .user-row.admin-user {
+            border-left-color: var(--color-primary);
+        }
+        .user-row.guest-user {
+            border-left-color: var(--color-secondary);
+        }
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-md);
+        }
+        .user-info .username {
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+        .user-info .badge {
+            font-size: var(--font-xs);
+            padding: 2px 8px;
+            border-radius: var(--radius-md);
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .badge-admin {
+            background-color: var(--color-primary);
+            color: var(--bg-primary);
+        }
+        .badge-guest {
+            background-color: var(--color-secondary);
+            color: var(--bg-primary);
+        }
+        .user-actions {
+            display: flex;
+            gap: var(--spacing-sm);
+        }
+        .btn-sm {
+            padding: var(--spacing-xs) var(--spacing-md);
+            border: 1px solid var(--border-secondary);
+            border-radius: var(--radius-sm);
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: var(--font-sm);
+            transition: all var(--transition-fast);
+        }
+        .btn-sm:hover {
+            border-color: var(--color-primary);
+            color: var(--color-primary);
+        }
+        .btn-sm.danger:hover {
+            border-color: var(--color-error);
+            color: var(--color-error);
+        }
+
+        .form-row {
+            display: flex;
+            gap: var(--spacing-md);
+            margin-bottom: var(--spacing-md);
+            align-items: end;
+        }
+        .form-group {
+            flex: 1;
+        }
+        .form-group label {
+            display: block;
+            color: var(--text-secondary);
+            font-size: var(--font-sm);
+            margin-bottom: var(--spacing-xs);
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: var(--spacing-sm) var(--spacing-md);
+            background-color: var(--bg-tertiary);
+            border: 2px solid var(--border-primary);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-size: var(--font-sm);
+            outline: none;
+            transition: border-color var(--transition-fast);
+        }
+        .form-group input:focus {
+            border-color: var(--color-primary);
+        }
+
+        .perm-section {
+            margin-top: var(--spacing-lg);
+            padding: var(--spacing-lg);
+            background-color: var(--bg-tertiary);
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-primary);
+        }
+        .perm-section h3 {
+            color: var(--color-primary);
+            font-size: var(--font-base);
+            margin-bottom: var(--spacing-md);
+        }
+        .perm-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: var(--spacing-sm);
+        }
+        .perm-item {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            padding: var(--spacing-sm);
+            background-color: var(--bg-secondary);
+            border-radius: var(--radius-xs);
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+        .perm-item:hover {
+            background-color: var(--bg-hover);
+        }
+        .perm-item input[type="checkbox"] {
+            accent-color: var(--color-primary);
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        .perm-item label {
+            color: var(--text-primary);
+            font-size: var(--font-sm);
+            cursor: pointer;
+            flex: 1;
+        }
+        .perm-item .perm-detail {
+            color: var(--text-tertiary);
+            font-size: var(--font-xs);
+        }
+
+        .toast {
+            position: fixed;
+            bottom: var(--spacing-xl);
+            right: var(--spacing-xl);
+            padding: var(--spacing-md) var(--spacing-xl);
+            border-radius: var(--radius-md);
+            font-weight: 500;
+            z-index: 9999;
+            animation: slideInUp var(--transition-normal);
+            box-shadow: var(--shadow-lg);
+        }
+        .toast.success {
+            background-color: var(--color-success);
+            color: white;
+        }
+        .toast.error {
+            background-color: var(--color-error);
+            color: white;
+        }
+
+        .nlp-toggle {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            margin-top: var(--spacing-sm);
+        }
+        .nlp-toggle label {
+            color: var(--text-secondary);
+            font-size: var(--font-sm);
+        }
+
+        #edit-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--bg-overlay);
+            backdrop-filter: blur(4px);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+        #edit-modal.show {
+            display: flex;
+        }
+        .modal-content {
+            background-color: var(--bg-secondary);
+            border: 2px solid var(--border-primary);
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-xl);
+            width: 90%;
+            max-width: 700px;
+            max-height: 85vh;
+            overflow-y: auto;
+            box-shadow: var(--shadow-xl);
+        }
+        .modal-content h2 {
+            color: var(--color-primary);
+            margin-bottom: var(--spacing-lg);
+        }
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: var(--spacing-md);
+            margin-top: var(--spacing-xl);
+        }
+    </style>
+</head>
+<body data-theme="dark">
+    <div class="admin-container">
+        <div class="admin-header">
+            <h1>Admin Settings</h1>
+            <div class="admin-nav">
+                <a href="/"><span class="material-icons" style="vertical-align:middle;font-size:18px;">home</span> Dashboard</a>
+                <a href="/logout"><span class="material-icons" style="vertical-align:middle;font-size:18px;">logout</span> Logout</a>
+            </div>
+        </div>
+
+        <!-- User Management -->
+        <div class="card">
+            <h2><span class="material-icons">people</span> User Management</h2>
+            <div id="users-list"></div>
+
+            <h3 style="color: var(--text-secondary); margin: var(--spacing-lg) 0 var(--spacing-md);">Create New User</h3>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="new-username" placeholder="username">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="new-password" placeholder="password">
+                </div>
+                <button class="primary-button" onclick="createUser()" style="height:42px;">
+                    <span class="material-icons">person_add</span> Create
+                </button>
+            </div>
+        </div>
+
+        <!-- Permission Editor Modal -->
+        <div id="edit-modal">
+            <div class="modal-content">
+                <h2 id="modal-title">Edit Permissions</h2>
+                <input type="hidden" id="edit-user-id">
+
+                <div class="nlp-toggle">
+                    <input type="checkbox" id="edit-nlp-enabled">
+                    <label for="edit-nlp-enabled">Enable NLP / Natural Language Control</label>
+                </div>
+
+                <div class="perm-section">
+                    <h3><span class="material-icons" style="font-size:18px;vertical-align:middle;">lightbulb</span> Lights</h3>
+                    <div class="perm-grid" id="perm-lights"></div>
+                </div>
+
+                <div class="perm-section">
+                    <h3><span class="material-icons" style="font-size:18px;vertical-align:middle;">meeting_room</span> Rooms / Groups</h3>
+                    <div class="perm-grid" id="perm-groups"></div>
+                </div>
+
+                <div class="perm-section">
+                    <h3><span class="material-icons" style="font-size:18px;vertical-align:middle;">palette</span> Scenes</h3>
+                    <div class="perm-grid" id="perm-scenes"></div>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="secondary-button" onclick="closeModal()">Cancel</button>
+                    <button class="primary-button" onclick="savePermissions()">
+                        <span class="material-icons">save</span> Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allLights = [];
+        let allScenes = [];
+        let allGroups = new Map();
+
+        async function init() {
+            const [lightsRes, scenesRes] = await Promise.all([
+                fetch('/api/lights'),
+                fetch('/api/scenes')
+            ]);
+            allLights = await lightsRes.json();
+            allScenes = await scenesRes.json();
+
+            // Extract groups
+            allLights.forEach(light => {
+                if (light.group && !allGroups.has(light.group.id)) {
+                    allGroups.set(light.group.id, {
+                        id: light.group.id,
+                        name: light.group.name,
+                        lightCount: 0
+                    });
+                }
+                if (light.group) {
+                    allGroups.get(light.group.id).lightCount++;
+                }
+            });
+
+            loadUsers();
+        }
+
+        async function loadUsers() {
+            const res = await fetch('/api/admin/users');
+            const data = await res.json();
+            const container = document.getElementById('users-list');
+            container.innerHTML = '';
+
+            data.users.forEach(user => {
+                const isAdmin = user.is_admin;
+                const isGuest = user.is_guest;
+                let badgeHtml = '';
+                let rowClass = 'user-row';
+
+                if (isAdmin) {
+                    badgeHtml = '<span class="badge badge-admin">Admin</span>';
+                    rowClass += ' admin-user';
+                } else if (isGuest) {
+                    badgeHtml = '<span class="badge badge-guest">Guest</span>';
+                    rowClass += ' guest-user';
+                }
+
+                const permCount = (user.permissions?.lights?.length || 0) +
+                    (user.permissions?.groups?.length || 0) +
+                    (user.permissions?.scenes?.length || 0);
+
+                const nlpStatus = user.nlp_enabled ? '🧠' : '';
+
+                const deleteBtn = (!isAdmin && !isGuest)
+                    ? `<button class="btn-sm danger" onclick="deleteUser(${user.id}, '${user.username}')">Delete</button>`
+                    : '';
+
+                const editBtn = !isAdmin
+                    ? `<button class="btn-sm" onclick="editPermissions(${user.id}, '${user.username}')">Permissions</button>`
+                    : '';
+
+                container.innerHTML += `
+                    <div class="${rowClass}">
+                        <div class="user-info">
+                            <span class="username">${user.username}</span>
+                            ${badgeHtml}
+                            <span style="color:var(--text-tertiary);font-size:var(--font-xs);">
+                                ${permCount} permissions ${nlpStatus}
+                            </span>
+                        </div>
+                        <div class="user-actions">
+                            ${editBtn}
+                            ${deleteBtn}
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        async function createUser() {
+            const username = document.getElementById('new-username').value.trim();
+            const password = document.getElementById('new-password').value;
+
+            if (!username || !password) {
+                showToast('Username and password required', 'error');
+                return;
+            }
+
+            const res = await fetch('/api/admin/users', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username, password})
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                document.getElementById('new-username').value = '';
+                document.getElementById('new-password').value = '';
+                showToast('User created');
+                loadUsers();
+            } else {
+                showToast(data.error || 'Failed', 'error');
+            }
+        }
+
+        async function deleteUser(id, username) {
+            if (!confirm(`Delete user "${username}"?`)) return;
+
+            const res = await fetch(`/api/admin/users/${id}`, {method: 'DELETE'});
+            const data = await res.json();
+
+            if (data.success) {
+                showToast('User deleted');
+                loadUsers();
+            } else {
+                showToast(data.error || 'Failed', 'error');
+            }
+        }
+
+        async function editPermissions(userId, username) {
+            document.getElementById('edit-user-id').value = userId;
+            document.getElementById('modal-title').textContent = `Permissions: ${username}`;
+
+            // Fetch current permissions
+            const res = await fetch(`/api/admin/users/${userId}/permissions`);
+            const data = await res.json();
+            const currentPerms = data.permissions || {};
+            const currentLights = new Set(currentPerms.lights || []);
+            const currentGroups = new Set(currentPerms.groups || []);
+            const currentScenes = new Set(currentPerms.scenes || []);
+
+            document.getElementById('edit-nlp-enabled').checked = data.nlp_enabled;
+
+            // Populate lights
+            const lightsGrid = document.getElementById('perm-lights');
+            lightsGrid.innerHTML = allLights.map(l => `
+                <div class="perm-item" onclick="this.querySelector('input').click()">
+                    <input type="checkbox" value="${l.id}" ${currentLights.has(String(l.id)) ? 'checked' : ''}
+                        onclick="event.stopPropagation()">
+                    <label>${l.label}</label>
+                    <span class="perm-detail">${l.group?.name || ''}</span>
+                </div>
+            `).join('');
+
+            // Populate groups
+            const groupsGrid = document.getElementById('perm-groups');
+            let groupsHtml = '';
+            allGroups.forEach((g, id) => {
+                groupsHtml += `
+                    <div class="perm-item" onclick="this.querySelector('input').click()">
+                        <input type="checkbox" value="${id}" ${currentGroups.has(String(id)) ? 'checked' : ''}
+                            onclick="event.stopPropagation()">
+                        <label>${g.name}</label>
+                        <span class="perm-detail">${g.lightCount} lights</span>
+                    </div>
+                `;
+            });
+            groupsGrid.innerHTML = groupsHtml;
+
+            // Populate scenes
+            const scenesGrid = document.getElementById('perm-scenes');
+            scenesGrid.innerHTML = allScenes.map(s => `
+                <div class="perm-item" onclick="this.querySelector('input').click()">
+                    <input type="checkbox" value="${s.uuid}" ${currentScenes.has(s.uuid) ? 'checked' : ''}
+                        onclick="event.stopPropagation()">
+                    <label>${s.name}</label>
+                </div>
+            `).join('');
+
+            document.getElementById('edit-modal').classList.add('show');
+        }
+
+        function closeModal() {
+            document.getElementById('edit-modal').classList.remove('show');
+        }
+
+        async function savePermissions() {
+            const userId = document.getElementById('edit-user-id').value;
+            const nlpEnabled = document.getElementById('edit-nlp-enabled').checked;
+
+            const lights = [...document.querySelectorAll('#perm-lights input:checked')].map(i => i.value);
+            const groups = [...document.querySelectorAll('#perm-groups input:checked')].map(i => i.value);
+            const scenes = [...document.querySelectorAll('#perm-scenes input:checked')].map(i => i.value);
+
+            const res = await fetch(`/api/admin/users/${userId}/permissions`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({lights, groups, scenes, nlp_enabled: nlpEnabled})
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                showToast('Permissions saved');
+                closeModal();
+                loadUsers();
+            } else {
+                showToast(data.error || 'Failed', 'error');
+            }
+        }
+
+        function showToast(msg, type = 'success') {
+            const el = document.createElement('div');
+            el.className = `toast ${type}`;
+            el.textContent = msg;
+            document.body.appendChild(el);
+            setTimeout(() => el.remove(), 3000);
+        }
+
+        // Close modal on escape
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') closeModal();
+        });
+        document.getElementById('edit-modal').addEventListener('click', e => {
+            if (e.target.id === 'edit-modal') closeModal();
+        });
+
+        init();
+    </script>
+</body>
+</html>

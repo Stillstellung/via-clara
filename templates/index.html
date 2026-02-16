@@ -20,12 +20,29 @@
                 </div>
             </div>
             <div class="header-actions">
+                <span id="user-badge" class="user-badge" style="display:none;"></span>
+                {% if is_admin %}
+                <a href="/admin" class="icon-button-header" title="Admin Settings" aria-label="Admin settings">
+                    <span class="material-icons">admin_panel_settings</span>
+                </a>
+                {% endif %}
                 <button id="theme-toggle" class="icon-button-header" title="Toggle theme" aria-label="Toggle light/dark theme">
                     <span class="material-icons">dark_mode</span>
                 </button>
+                {% if is_admin %}
                 <button id="settings-button" class="settings-button" title="Settings" aria-label="Open settings">
                     <span class="material-icons">settings</span>
                 </button>
+                {% endif %}
+                {% if is_logged_in %}
+                <a href="/logout" class="icon-button-header" title="Logout" aria-label="Logout">
+                    <span class="material-icons">logout</span>
+                </a>
+                {% else %}
+                <a href="/login" class="icon-button-header" title="Login" aria-label="Login">
+                    <span class="material-icons">login</span>
+                </a>
+                {% endif %}
             </div>
         </header>
         
@@ -145,7 +162,8 @@
         </section>
     </div>
 
-    <!-- Settings Modal -->
+    <!-- Settings Modal (admin only) -->
+    {% if is_admin %}
     <div id="settings-modal" class="settings-modal">
         <div class="settings-panel">
             <div class="settings-header">
@@ -257,7 +275,17 @@
             </div>
         </div>
     </div>
+    {% endif %}
 
+    <script>
+        // Pass auth state to JS
+        window.VIA_CLARA_AUTH = {
+            isAdmin: {{ 'true' if is_admin else 'false' }},
+            isLoggedIn: {{ 'true' if is_logged_in else 'false' }},
+            username: "{{ user.username if user else 'guest' }}",
+            nlpEnabled: {{ 'true' if (is_admin or (user and user.nlp_enabled)) else 'false' }}
+        };
+    </script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>
