@@ -278,7 +278,7 @@ def toggle_light(selector):
         return error_response("Unauthorized", HTTP_UNAUTHORIZED)
 
     # Check permission for this selector
-    check_selector = f"id:{selector}" if not selector.startswith('id:') and not selector.startswith('group') and selector != 'all' else selector
+    check_selector = selector if (selector.startswith('id:') or selector.startswith('label:') or selector.startswith('group') or selector == 'all') else f"id:{selector}"
     if not can_control_light(user, check_selector):
         return error_response("You don't have permission to control this light", 403)
 

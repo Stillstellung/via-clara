@@ -119,10 +119,14 @@ def filter_lights(lights_data: list, user: Dict) -> list:
 
     filtered = []
     for light in lights_data:
+        light_label = light.get('label', '')
         light_id = str(light.get('id', ''))
+        group_name = light.get('group', {}).get('name', '') if light.get('group') else ''
         group_id = str(light.get('group', {}).get('id', '')) if light.get('group') else ''
 
-        if light_id in perms['lights'] or group_id in perms['groups']:
+        # Match by label or ID for lights, by name or ID for groups
+        if (light_label in perms['lights'] or light_id in perms['lights'] or
+                group_name in perms['groups'] or group_id in perms['groups']):
             filtered.append(light)
 
     return filtered
@@ -137,7 +141,8 @@ def filter_scenes(scenes_data: list, user: Dict) -> list:
     if not perms['scenes']:
         return []
 
-    return [s for s in scenes_data if s.get('uuid', '') in perms['scenes']]
+    return [s for s in scenes_data if (s.get('uuid', '') in perms['scenes'] or
+                                        s.get('name', '') in perms['scenes'])]
 
 
 def can_control_light(user: Dict, selector: str) -> bool:
@@ -157,14 +162,17 @@ def can_control_light(user: Dict, selector: str) -> bool:
         light_id = selector.split('id:')[1].split('|')[0]  # handle zone selectors
         return light_id in perms['lights']
 
+    if selector.startswith('label:'):
+        light_label = selector.split('label:')[1]
+        return light_label in perms['lights']
+
     if selector.startswith('group_id:'):
         group_id = selector.split('group_id:')[1]
         return group_id in perms['groups']
 
     if selector.startswith('group:'):
-        # Need to resolve group name to ID - allow if any group is permitted
-        # This is a best-effort check; the LIFX API will handle the actual filtering
-        return bool(perms['groups'])
+        group_name = selector.split('group:')[1]
+        return group_name in perms['groups']
 
     return False
 
@@ -176,10 +184,10 @@ def get_user_allowed_selectors(user: Dict) -> str:
 
     perms = get_user_permissions(user['id'])
     selectors = []
-    for lid in perms['lights']:
-        selectors.append(f'id:{lid}')
-    for gid in perms['groups']:
-        selectors.append(f'group_id:{gid}')
+    for name in perms['lights']:
+        selectors.append(f'label:{name}')
+    for name in perms['groups']:
+        selectors.append(f'group:{name}')
     return ','.join(selectors) if selectors else ''
 
 
