@@ -145,22 +145,33 @@ def filter_scenes(scenes_data: list, user: Dict) -> list:
                                         s.get('name', '') in perms['scenes'])]
 
 
-def can_control_light(user: Dict, selector: str) -> bool:
-    """Check if a user can control a light/group given a selector string."""
+def can_control_light(user: Dict, selector: str, lights_cache: list = None) -> bool:
+    """Check if a user can control a light/group given a selector string.
+    
+    lights_cache: optional list of LIFX light dicts for resolving hardware IDs to labels.
+    """
     if user.get('is_admin'):
         return True
 
     perms = get_user_permissions(user['id'])
 
-    # Parse selector formats: "id:xxx", "group_id:xxx", "group:name", "all"
+    # Parse selector formats: "id:xxx", "group_id:xxx", "group:name", "label:name", "all"
     if selector == 'all':
-        # 'all' is only allowed if user has at least some permissions
-        # But we'll need to rewrite the selector to only target their lights
         return bool(perms['lights'] or perms['groups'])
 
     if selector.startswith('id:'):
         light_id = selector.split('id:')[1].split('|')[0]  # handle zone selectors
-        return light_id in perms['lights']
+        # Check by hardware ID directly
+        if light_id in perms['lights']:
+            return True
+        # Resolve hardware ID to label via cache
+        if lights_cache:
+            for light in lights_cache:
+                if str(light.get('id', '')) == light_id:
+                    label = light.get('label', '')
+                    group_name = light.get('group', {}).get('name', '') if light.get('group') else ''
+                    return label in perms['lights'] or group_name in perms['groups']
+        return False
 
     if selector.startswith('label:'):
         light_label = selector.split('label:')[1]
@@ -168,7 +179,16 @@ def can_control_light(user: Dict, selector: str) -> bool:
 
     if selector.startswith('group_id:'):
         group_id = selector.split('group_id:')[1]
-        return group_id in perms['groups']
+        # Check by ID directly
+        if group_id in perms['groups']:
+            return True
+        # Resolve group ID to name via cache
+        if lights_cache:
+            for light in lights_cache:
+                g = light.get('group', {})
+                if g and str(g.get('id', '')) == group_id:
+                    return g.get('name', '') in perms['groups']
+        return False
 
     if selector.startswith('group:'):
         group_name = selector.split('group:')[1]

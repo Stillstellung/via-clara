@@ -702,8 +702,8 @@ def process_natural_language():
             elif "/api/lights/" in endpoint and "/state" in endpoint:
                 selector = endpoint.split("/api/lights/")[1].split("/state")[0]
 
-            # Permission check for non-scene actions
-            if selector and not can_control_light(user, selector):
+            # Permission check for non-scene actions (pass lights_data for ID resolution)
+            if selector and not can_control_light(user, selector, lights_cache=lights_data):
                 results.append({"action": description, "success": False, "error": "Permission denied"})
                 api_responses.append({
                     "success": False,
@@ -958,24 +958,68 @@ def set_user_perms(user_id):
     nlp_enabled = 1 if data.get('nlp_enabled', False) else 0
     conn.execute("UPDATE users SET nlp_enabled = ? WHERE id = ?", (nlp_enabled, user_id))
 
+    # Fetch current LIFX data for cascading resolution
+    lights_response = make_lifx_request('GET', f"{BASE_URL}/lights/all", headers=get_lifx_headers())
+    scenes_response = make_lifx_request('GET', f"{BASE_URL}/scenes", headers=get_lifx_headers())
+    all_lights = lights_response.json() if not isinstance(lights_response, tuple) else []
+    all_scenes = scenes_response.json() if not isinstance(scenes_response, tuple) else []
+
+    # Start with explicitly selected items
+    selected_lights = set(data.get('lights', []))
+    selected_groups = set(data.get('groups', []))
+    selected_scenes = set(data.get('scenes', []))
+
+    # Cascade: group selection → auto-include all lights in that group
+    for group_name in list(selected_groups):
+        for light in all_lights:
+            g = light.get('group', {})
+            if g and g.get('name') == group_name:
+                selected_lights.add(light.get('label', ''))
+
+    # Cascade: scene selection → auto-include all lights/groups used by that scene
+    for scene_name_or_uuid in list(selected_scenes):
+        for scene in all_scenes:
+            if scene.get('name') == scene_name_or_uuid or scene.get('uuid') == scene_name_or_uuid:
+                for state in scene.get('states', []):
+                    sel = state.get('selector', '')
+                    # Resolve scene selectors to light labels and group names
+                    if sel.startswith('id:'):
+                        hw_id = sel.split('id:')[1]
+                        for light in all_lights:
+                            if str(light.get('id', '')) == hw_id:
+                                selected_lights.add(light.get('label', ''))
+                                g = light.get('group', {})
+                                if g:
+                                    selected_groups.add(g.get('name', ''))
+                    elif sel.startswith('group_id:'):
+                        gid = sel.split('group_id:')[1]
+                        for light in all_lights:
+                            g = light.get('group', {})
+                            if g and str(g.get('id', '')) == gid:
+                                selected_groups.add(g.get('name', ''))
+                                selected_lights.add(light.get('label', ''))
+
     # Replace all permissions
     conn.execute("DELETE FROM user_permissions WHERE user_id = ?", (user_id,))
 
-    for light_id in data.get('lights', []):
-        conn.execute(
-            "INSERT INTO user_permissions (user_id, permission_type, permission_value) VALUES (?, 'lights', ?)",
-            (user_id, str(light_id))
-        )
-    for group_id in data.get('groups', []):
-        conn.execute(
-            "INSERT INTO user_permissions (user_id, permission_type, permission_value) VALUES (?, 'groups', ?)",
-            (user_id, str(group_id))
-        )
-    for scene_uuid in data.get('scenes', []):
-        conn.execute(
-            "INSERT INTO user_permissions (user_id, permission_type, permission_value) VALUES (?, 'scenes', ?)",
-            (user_id, scene_uuid)
-        )
+    for light_name in selected_lights:
+        if light_name:
+            conn.execute(
+                "INSERT INTO user_permissions (user_id, permission_type, permission_value) VALUES (?, 'lights', ?)",
+                (user_id, str(light_name))
+            )
+    for group_name in selected_groups:
+        if group_name:
+            conn.execute(
+                "INSERT INTO user_permissions (user_id, permission_type, permission_value) VALUES (?, 'groups', ?)",
+                (user_id, str(group_name))
+            )
+    for scene_name in selected_scenes:
+        if scene_name:
+            conn.execute(
+                "INSERT INTO user_permissions (user_id, permission_type, permission_value) VALUES (?, 'scenes', ?)",
+                (user_id, scene_name)
+            )
 
     conn.commit()
     conn.close()
