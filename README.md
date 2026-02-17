@@ -29,6 +29,16 @@ And the result
 
 ![Result](/nlp2.png)
 
+### User Authentication & Authorization
+- **Multi-user support** - Admin, named users, and guest roles
+- **Per-user permission scoping** - Assign specific lights, rooms/groups, and scenes to each user
+- **Permission cascading** - Granting a group auto-includes its lights; granting a scene auto-includes its lights and groups
+- **NLP scoping** - Non-admin users only see their entitled lights in the LLM context
+- **`all` selector rewriting** - Commands like "turn off all lights" are automatically scoped to the user's allowed devices
+- **Guest access** - Unauthenticated visitors get a scoped guest view (no login required)
+- **Admin panel** - Full user management UI at `/admin` for creating users, setting passwords, and configuring permissions
+- **Login system** - Password-hashed authentication via werkzeug
+
 ### Configuration UI
 - **Model selection** - Choose between Claude Haiku, Sonnet, or Opus
 - **Custom system prompt** - Customize how the LLM interprets your speech
@@ -90,6 +100,15 @@ The LIFX API doesn't provide a "is this scene active?" endpoint, so Via Clara us
    - Enter your Claude API key
    - Select your preferred Claude model
    - Click "Save Settings"
+
+6. **Log in**
+   - Default admin credentials: `admin` / `admin` — **change the password immediately**
+   - Unauthenticated visitors see the guest view (scoped permissions, no NLP by default)
+
+7. **Manage users (admin only)**
+   - Navigate to the admin panel (gear icon → Admin, or `/admin`)
+   - Create named users, set passwords, toggle NLP access
+   - Assign lights, rooms/groups, and scenes per user — cascading resolves dependencies automatically
 
 ### Natural Language Commands
 
@@ -158,14 +177,18 @@ Expand the API details panel to see:
 ```
 via-clara/
 ├── app.py                 # Flask backend & API routes
+├── auth.py                # Authentication, authorization & permission scoping
 ├── config.py              # Configuration management
 ├── constants.py           # Centralized constants
 ├── scene_matcher.py       # Scene status detection
 ├── api_utils.py           # API response handlers
 ├── requirements.txt       # Python dependencies
 ├── config.example.json    # Configuration template
+├── via_clara.db           # SQLite user/permissions database (auto-created)
 ├── templates/
-│   └── index.html        # Main HTML template
+│   ├── index.html        # Main dashboard
+│   ├── login.html        # Login page
+│   └── admin.html        # Admin user management panel
 └── static/
     ├── css/
     │   └── style.css     # Material Design styling
@@ -178,6 +201,7 @@ via-clara/
 - **Frontend:** Material JS
 - **LLM:** Anthropic Claude API (Haiku/Sonnet/Opus models)
 - **Smart Home:** LIFX HTTP API
+- **Auth:** SQLite + werkzeug password hashing + Flask sessions
 - **Rate Limiting:** Flask-Limiter
 - **Configuration:** JSON-based with hot-reload
 
@@ -285,9 +309,18 @@ You can edit the system prompt in Settings to:
 
 ## API Endpoints
 
+### Authentication
+- `GET /login` - Login page
+- `POST /login` - Authenticate user
+- `GET /logout` - End session
+- `GET /admin` - Admin user management panel (admin only)
+- `POST /api/admin/users` - Create user
+- `PUT /api/admin/users/<id>/perms` - Set user permissions
+- `DELETE /api/admin/users/<id>` - Delete user
+
 ### Settings Management
-- `GET /api/settings` - Get current configuration (masked)
-- `POST /api/settings` - Update configuration
+- `GET /api/settings` - Get current configuration (masked, admin only)
+- `POST /api/settings` - Update configuration (admin only)
 - `GET /api/models` - Get available Claude models
 - `GET /api/default-prompt` - Get the default system prompt
 
